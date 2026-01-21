@@ -282,7 +282,7 @@ class QuantumGateSet:
         self.gate_history.clear()
 
 
-def create_adaptive_gate_pool(n_qubits: int) -> List[Dict[str, Any]]:
+def create_adaptive_gate_pool(n_qubits: int, reduced: bool = True) -> List[Dict[str, Any]]:
     """
     Create a pool of gate templates for adaptive circuit construction.
 
@@ -292,14 +292,15 @@ def create_adaptive_gate_pool(n_qubits: int) -> List[Dict[str, Any]]:
 
     Args:
         n_qubits: Number of qubits
+        reduced: If True, use reduced gate pool for faster training
 
     Returns:
         List of gate templates
     """
     pool = []
 
-    # Single-qubit rotation gates
-    for gate_type in ['rx', 'ry', 'rz']:
+    # Single-qubit rotation gates (always include)
+    for gate_type in ['ry']:  # Ry is most useful for amplitude manipulation
         for qubit in range(n_qubits):
             pool.append({
                 'type': gate_type,
@@ -308,27 +309,59 @@ def create_adaptive_gate_pool(n_qubits: int) -> List[Dict[str, Any]]:
                 'n_params': 1
             })
 
-    # Two-qubit entangling gates (non-parameterized)
-    for control in range(n_qubits):
-        for target in range(n_qubits):
-            if control != target:
+    if not reduced:
+        # Add rx and rz for full expressivity
+        for gate_type in ['rx', 'rz']:
+            for qubit in range(n_qubits):
                 pool.append({
-                    'type': 'cx',
-                    'qubits': [control, target],
-                    'parameterized': False,
-                    'n_params': 0
+                    'type': gate_type,
+                    'qubits': [qubit],
+                    'parameterized': True,
+                    'n_params': 1
                 })
 
-    # Controlled rotation gates
-    for gate_type in ['crx', 'cry', 'crz']:
-        for control in range(n_qubits):
-            for target in range(n_qubits):
-                if control != target:
-                    pool.append({
-                        'type': gate_type,
-                        'qubits': [control, target],
-                        'parameterized': True,
-                        'n_params': 1
-                    })
+    # Two-qubit entangling gates - only linear connectivity for speed
+    for i in range(n_qubits - 1):
+        pool.append({
+            'type': 'cx',
+            'qubits': [i, i + 1],
+            'parameterized': False,
+            'n_params': 0
+        })
+        pool.append({
+            'type': 'cx',
+            'qubits': [i + 1, i],
+            'parameterized': False,
+            'n_params': 0
+        })
+
+    # Controlled rotation gates - only linear connectivity
+    for gate_type in ['cry']:  # CRY is most useful
+        for i in range(n_qubits - 1):
+            pool.append({
+                'type': gate_type,
+                'qubits': [i, i + 1],
+                'parameterized': True,
+                'n_params': 1
+            })
+            pool.append({
+                'type': gate_type,
+                'qubits': [i + 1, i],
+                'parameterized': True,
+                'n_params': 1
+            })
+
+    if not reduced:
+        # Full connectivity for controlled rotations
+        for gate_type in ['crx', 'crz']:
+            for control in range(n_qubits):
+                for target in range(n_qubits):
+                    if control != target:
+                        pool.append({
+                            'type': gate_type,
+                            'qubits': [control, target],
+                            'parameterized': True,
+                            'n_params': 1
+                        })
 
     return pool

@@ -137,12 +137,13 @@ class AdaptiveQNN:
     def _setup_observables(self) -> None:
         """Setup measurement observables for output extraction."""
         # For classification, measure expectation values of Z operators
+        # Note: Qiskit uses little-endian ordering, so qubit 0 is rightmost in Pauli string
         self.observables = []
 
         for i in range(min(self.n_classes, self.n_qubits)):
-            # Z on qubit i
+            # Z on qubit i - need to reverse position for Qiskit's convention
             z_string = ['I'] * self.n_qubits
-            z_string[i] = 'Z'
+            z_string[self.n_qubits - 1 - i] = 'Z'  # Reverse indexing for Qiskit
             pauli_str = ''.join(z_string)
             self.observables.append(SparsePauliOp(pauli_str))
 
@@ -275,7 +276,8 @@ class AdaptiveQNN:
         y: np.ndarray,
         max_iterations: int = 10,
         improvement_threshold: float = 1e-4,
-        verbose: bool = True
+        verbose: bool = True,
+        batch_size: int = 32
     ) -> 'AdaptiveQNN':
         """
         Train the Adaptive QNN using iterative analytic reconstruction.
@@ -292,6 +294,7 @@ class AdaptiveQNN:
             max_iterations: Maximum adaptive construction iterations
             improvement_threshold: Stop if improvement below this
             verbose: Print training progress
+            batch_size: Number of samples to use for gate evaluation (faster)
 
         Returns:
             self (for method chaining)
@@ -308,11 +311,18 @@ class AdaptiveQNN:
         # Build initial circuit
         self.build_initial_circuit(n_features)
 
-        # Create cost function
-        cost_fn = self._create_cost_function(X_processed, y)
+        # Create cost function for full dataset (used for final evaluation)
+        cost_fn_full = self._create_cost_function(X_processed, y)
 
-        # Initial cost
-        initial_cost = cost_fn(self.circuit, self.trained_params)
+        # Create mini-batch cost function for faster gate evaluation
+        eval_batch_size = min(batch_size, n_samples)
+        batch_indices = np.random.choice(n_samples, eval_batch_size, replace=False)
+        X_batch = X_processed[batch_indices]
+        y_batch = y[batch_indices]
+        cost_fn_batch = self._create_cost_function(X_batch, y_batch)
+
+        # Initial cost (on full dataset)
+        initial_cost = cost_fn_full(self.circuit, self.trained_params)
 
         if verbose:
             print(f"Initial cost: {initial_cost:.6f}")
@@ -330,6 +340,12 @@ class AdaptiveQNN:
         for iteration in range(max_iterations):
             if verbose:
                 print(f"\n--- Iteration {iteration + 1} ---")
+
+            # Resample batch each iteration for variety
+            batch_indices = np.random.choice(n_samples, eval_batch_size, replace=False)
+            X_batch = X_processed[batch_indices]
+            y_batch = y[batch_indices]
+            cost_fn_batch = self._create_cost_function(X_batch, y_batch)
 
             # Check measurement budget
             if self.estimator.get_measurement_count() >= self.measurement_budget:
@@ -351,18 +367,23 @@ class AdaptiveQNN:
 
                 # Create trial circuit
                 trial_builder = self.circuit_builder.copy()
-                trial_circuit = trial_builder.get_circuit()
 
                 # Add candidate gate
                 param, _ = trial_builder.add_adaptive_gate(gate_template)
                 trial_circuit = trial_builder.get_circuit()
 
                 if param is not None:
-                    # Estimate optimal parameter
-                    trial_params = self.trained_params.copy()
+                    # Build trial params dict with parameters from the trial circuit
+                    # Map existing trained params by name to new circuit's params
+                    trial_params = {}
+                    trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
+
+                    for orig_param, value in self.trained_params.items():
+                        if orig_param.name in trial_circuit_params:
+                            trial_params[trial_circuit_params[orig_param.name]] = value
 
                     landscape_result = self.fourier_estimator.analyze_landscape(
-                        trial_circuit, param, cost_fn, trial_params, n_samples=5
+                        trial_circuit, param, cost_fn_batch, trial_params, n_samples=5
                     )
                     optimal_value = landscape_result['optimal_theta']
                     optimal_cost = landscape_result['optimal_cost']
@@ -374,7 +395,15 @@ class AdaptiveQNN:
                         best_param_value = optimal_value
                 else:
                     # Non-parameterized gate
-                    trial_cost = cost_fn(trial_circuit, self.trained_params)
+                    # Map params by name for non-parameterized gates too
+                    trial_params = {}
+                    trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
+
+                    for orig_param, value in self.trained_params.items():
+                        if orig_param.name in trial_circuit_params:
+                            trial_params[trial_circuit_params[orig_param.name]] = value
+
+                    trial_cost = cost_fn_batch(trial_circuit, trial_params)
 
                     if trial_cost < best_gate_cost:
                         best_gate_cost = trial_cost
@@ -397,7 +426,8 @@ class AdaptiveQNN:
             if actual_param is not None and best_param_value is not None:
                 self.trained_params[actual_param] = best_param_value
 
-            best_cost = best_gate_cost
+            # Re-evaluate on full dataset for accurate cost tracking
+            best_cost = cost_fn_full(self.circuit, self.trained_params)
 
             # Record history
             self.training_history.append({

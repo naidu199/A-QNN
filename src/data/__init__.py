@@ -7,7 +7,9 @@ from .datasets import (
     load_iris_quantum,
     load_moons_quantum,
     load_circles_quantum,
-    generate_quantum_data
+    generate_quantum_data,
+    load_breast_cancer_quantum,
+    load_digits_quantum
 )
 
 __all__ = [
@@ -15,5 +17,7 @@ __all__ = [
     "load_iris_quantum",
     "load_moons_quantum",
     "load_circles_quantum",
-    "generate_quantum_data"
+    "generate_quantum_data",
+    "load_breast_cancer_quantum",
+    "load_digits_quantum"
 ]

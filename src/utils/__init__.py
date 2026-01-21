@@ -9,7 +9,7 @@ from .helpers import (
     load_model,
     timer
 )
-from .config import QNNConfig, load_config, save_config
+from .config import QNNConfig, load_config, save_config, get_preset, ExperimentConfig
 
 __all__ = [
     "set_random_seed",
@@ -18,6 +18,10 @@ __all__ = [
     "load_model",
     "timer",
     "QNNConfig",
+    "ExperimentConfig",
+    "load_config",
+    "save_config",
+    "get_preset",
     "load_config",
     "save_config"
 ]

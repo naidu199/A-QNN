@@ -230,6 +230,10 @@ def main():
     print(f"  Parameters:   {circuit_info['n_parameters']}")
     print(f"  Measurements: {model.estimator.get_measurement_count()}")
 
+    # Print circuit diagram
+    print(f"\nQuantum Circuit:")
+    print(model.circuit.draw(output='text'))
+
     # Cross-validation
     if args.cv > 0:
         print(f"\nRunning {args.cv}-fold cross-validation...")
