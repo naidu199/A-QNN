@@ -48,6 +48,12 @@ def main():
         max_gates=15,
         shots=512
     )
+    # model = AdaptiveQNN(
+    # n_qubits=4,
+    # n_classes=2,
+    # max_gates=30,
+    # encoding_type='iqp'
+    # )
     print("   Model created successfully!")
 
     # 3. Train model

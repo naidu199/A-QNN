@@ -66,7 +66,7 @@ def compare_gradient_magnitudes(n_qubits_range, n_samples=50, n_layers=3):
 
         # Create a random circuit
         builder = AdaptiveCircuitBuilder(n_qubits)
-        builder.add_encoding_layer()
+        data_params = builder.add_encoding_layer()
 
         for _ in range(n_layers):
             builder.add_variational_layer(entanglement='linear')
@@ -74,12 +74,20 @@ def compare_gradient_magnitudes(n_qubits_range, n_samples=50, n_layers=3):
         circuit = builder.get_circuit()
         params = builder.get_parameters()
 
+        # Get only data parameters that are actually in the circuit
+        circuit_params = set(circuit.parameters)
+        data_params_in_circuit = [dp for dp in data_params if dp in circuit_params]
+
         # Random parameter values
         gradients = []
 
         for _ in range(n_samples):
-            # Random parameters
+            # Random parameters for variational params
             param_values = {p: np.random.uniform(0, 2*np.pi) for p in params}
+
+            # Bind data parameters to fixed random values (only those in circuit)
+            for dp in data_params_in_circuit:
+                param_values[dp] = np.random.uniform(0, np.pi)
 
             # Estimate gradient using parameter shift rule
             for param in params[:min(5, len(params))]:  # Sample first 5 params

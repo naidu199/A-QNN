@@ -210,11 +210,21 @@ class AdaptiveQNN:
         # Create parameter binding
         param_binding = {}
 
-        # Bind data parameters
-        if self.data_params is not None:
-            for i, dp in enumerate(self.data_params):
-                if i < len(x):
-                    param_binding[dp] = float(x[i])
+        # Get all parameters from the circuit
+        circuit_params = circuit.parameters
+
+        # Bind data parameters (those starting with 'x')
+        data_params_in_circuit = sorted(
+            [p for p in circuit_params if p.name.startswith('x')],
+            key=lambda p: p.name
+        )
+
+        for i, dp in enumerate(data_params_in_circuit):
+            if i < len(x):
+                param_binding[dp] = float(x[i])
+            else:
+                # Bind unused data parameters to 0
+                param_binding[dp] = 0.0
 
         # Bind variational parameters
         param_binding.update(var_params)
