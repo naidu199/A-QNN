@@ -277,7 +277,8 @@ class AdaptiveQNN:
         max_iterations: int = 10,
         improvement_threshold: float = 1e-4,
         verbose: bool = True,
-        batch_size: int = 32
+        batch_size: int = 32,
+        beam_width: int = 1
     ) -> 'AdaptiveQNN':
         """
         Train the Adaptive QNN using iterative analytic reconstruction.
@@ -288,6 +289,9 @@ class AdaptiveQNN:
         3. For each gate, compute optimal parameter analytically
         4. Keep gate if it improves the objective
 
+        When beam_width > 1, uses beam search to explore multiple
+        candidate circuits in parallel, selecting the best path.
+
         Args:
             X: Training features, shape (n_samples, n_features)
             y: Training labels, shape (n_samples,)
@@ -295,6 +299,7 @@ class AdaptiveQNN:
             improvement_threshold: Stop if improvement below this
             verbose: Print training progress
             batch_size: Number of samples to use for gate evaluation (faster)
+            beam_width: Number of candidate circuits to track (1=greedy, >1=beam search)
 
         Returns:
             self (for method chaining)
@@ -305,8 +310,14 @@ class AdaptiveQNN:
             print(f"Training Adaptive QNN with {n_samples} samples, {n_features} features")
             print(f"Configuration: {self.n_qubits} qubits, {self.n_classes} classes")
 
-        # Preprocess data
-        X_processed = self.data_encoder.preprocess_data(X, method='minmax')
+        # Store preprocessing parameters for consistent scaling during predict
+        self._train_X_min = X.min(axis=0)
+        self._train_X_max = X.max(axis=0)
+        self._train_X_range = self._train_X_max - self._train_X_min
+        self._train_X_range[self._train_X_range == 0] = 1  # Avoid division by zero
+
+        # Preprocess data using stored parameters
+        X_processed = (X - self._train_X_min) / self._train_X_range
 
         # Build initial circuit
         self.build_initial_circuit(n_features)
@@ -326,20 +337,28 @@ class AdaptiveQNN:
 
         if verbose:
             print(f"Initial cost: {initial_cost:.6f}")
+            if beam_width > 1:
+                print(f"Using beam search with width {beam_width}")
 
         self.training_history = [{
             'iteration': 0,
             'cost': initial_cost,
-            'n_gates': 0,
+            'circuit_depth': self.circuit.depth(),
             'n_params': 0
         }]
 
         # Adaptive construction loop
         best_cost = initial_cost
 
+        # Initialize beam candidates: list of (cost, builder, trained_params, gate_history)
+        # Each candidate tracks its own circuit builder and parameters
+        beams = [(initial_cost, self.circuit_builder.copy(), dict(self.trained_params), [])]
+
         for iteration in range(max_iterations):
             if verbose:
                 print(f"\n--- Iteration {iteration + 1} ---")
+                if beam_width > 1:
+                    print(f"  Active beams: {len(beams)}")
 
             # Resample batch each iteration for variety
             batch_indices = np.random.choice(n_samples, eval_batch_size, replace=False)
@@ -353,94 +372,130 @@ class AdaptiveQNN:
                     print("Measurement budget exhausted")
                 break
 
-            # Find best gate to add
-            best_gate = None
-            best_param = None
-            best_param_value = None
-            best_gate_cost = best_cost
+            # Expand all beams with all possible gates
+            all_candidates = []
 
-            for gate_template in self.gate_pool:
+            for beam_cost, beam_builder, beam_params, beam_gate_history in beams:
                 # Skip if would exceed max gates
-                current_n_gates = len(self.circuit_builder.gate_set.gate_history)
+                current_n_gates = len(beam_builder.gate_set.gate_history)
                 if current_n_gates >= self.max_gates:
+                    # Keep this beam as-is (no expansion possible)
+                    all_candidates.append((beam_cost, beam_builder, beam_params, beam_gate_history, None, None))
                     continue
 
-                # Create trial circuit
-                trial_builder = self.circuit_builder.copy()
+                for gate_template in self.gate_pool:
+                    # Create trial circuit from this beam
+                    trial_builder = beam_builder.copy()
 
-                # Add candidate gate
-                param, _ = trial_builder.add_adaptive_gate(gate_template)
-                trial_circuit = trial_builder.get_circuit()
+                    # Add candidate gate
+                    param, _ = trial_builder.add_adaptive_gate(gate_template)
+                    trial_circuit = trial_builder.get_circuit()
 
-                if param is not None:
-                    # Build trial params dict with parameters from the trial circuit
-                    # Map existing trained params by name to new circuit's params
-                    trial_params = {}
-                    trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
+                    if param is not None:
+                        # Build trial params dict with parameters from the trial circuit
+                        trial_params = {}
+                        trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
 
-                    for orig_param, value in self.trained_params.items():
-                        if orig_param.name in trial_circuit_params:
-                            trial_params[trial_circuit_params[orig_param.name]] = value
+                        for orig_param, value in beam_params.items():
+                            if orig_param.name in trial_circuit_params:
+                                trial_params[trial_circuit_params[orig_param.name]] = value
 
-                    landscape_result = self.fourier_estimator.analyze_landscape(
-                        trial_circuit, param, cost_fn_batch, trial_params, n_samples=5
-                    )
-                    optimal_value = landscape_result['optimal_theta']
-                    optimal_cost = landscape_result['optimal_cost']
+                        landscape_result = self.fourier_estimator.analyze_landscape(
+                            trial_circuit, param, cost_fn_batch, trial_params, n_samples=5
+                        )
+                        optimal_value = landscape_result['optimal_theta']
+                        optimal_cost = landscape_result['optimal_cost']
 
-                    if optimal_cost < best_gate_cost:
-                        best_gate_cost = optimal_cost
-                        best_gate = gate_template
-                        best_param = param
-                        best_param_value = optimal_value
-                else:
-                    # Non-parameterized gate
-                    # Map params by name for non-parameterized gates too
-                    trial_params = {}
-                    trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
+                        all_candidates.append((
+                            optimal_cost, trial_builder, beam_params,
+                            beam_gate_history + [gate_template], param, optimal_value
+                        ))
+                    else:
+                        # Non-parameterized gate
+                        trial_params = {}
+                        trial_circuit_params = {p.name: p for p in trial_circuit.parameters}
 
-                    for orig_param, value in self.trained_params.items():
-                        if orig_param.name in trial_circuit_params:
-                            trial_params[trial_circuit_params[orig_param.name]] = value
+                        for orig_param, value in beam_params.items():
+                            if orig_param.name in trial_circuit_params:
+                                trial_params[trial_circuit_params[orig_param.name]] = value
 
-                    trial_cost = cost_fn_batch(trial_circuit, trial_params)
+                        trial_cost = cost_fn_batch(trial_circuit, trial_params)
 
-                    if trial_cost < best_gate_cost:
-                        best_gate_cost = trial_cost
-                        best_gate = gate_template
-                        best_param = None
-                        best_param_value = None
+                        all_candidates.append((
+                            trial_cost, trial_builder, beam_params,
+                            beam_gate_history + [gate_template], None, None
+                        ))
 
-            # Check improvement
-            improvement = best_cost - best_gate_cost
+            if not all_candidates:
+                if verbose:
+                    print("No valid candidates found")
+                break
 
-            if improvement < improvement_threshold or best_gate is None:
+            # Sort by cost and keep top beam_width candidates
+            all_candidates.sort(key=lambda x: x[0])
+            top_candidates = all_candidates[:beam_width]
+
+            # Check if best candidate improves over best current beam
+            best_candidate_cost = top_candidates[0][0]
+            best_beam_cost = min(b[0] for b in beams)
+            improvement = best_beam_cost - best_candidate_cost
+
+            if improvement < improvement_threshold:
                 if verbose:
                     print(f"Converged: improvement {improvement:.6f} < threshold {improvement_threshold}")
                 break
 
-            # Add best gate to circuit
-            actual_param, _ = self.circuit_builder.add_adaptive_gate(best_gate)
+            # Update beams with the top candidates
+            new_beams = []
+            for cost, builder, old_params, gate_history, new_param, new_param_value in top_candidates:
+                # Update params: copy old params and add new one if applicable
+                new_params = {}
+                builder_params = {p.name: p for p in builder.get_circuit().parameters}
+
+                for orig_param, value in old_params.items():
+                    if orig_param.name in builder_params:
+                        new_params[builder_params[orig_param.name]] = value
+
+                if new_param is not None and new_param_value is not None:
+                    # New param is already in the builder's circuit
+                    if new_param.name in builder_params:
+                        new_params[builder_params[new_param.name]] = new_param_value
+
+                new_beams.append((cost, builder, new_params, gate_history))
+
+            beams = new_beams
+
+            # Use the best beam's state for model update
+            best_beam = beams[0]
+            self.circuit_builder = best_beam[1].copy()
             self.circuit = self.circuit_builder.get_circuit()
 
-            if actual_param is not None and best_param_value is not None:
-                self.trained_params[actual_param] = best_param_value
+            # Update trained params from best beam
+            self.trained_params = {}
+            circuit_params = {p.name: p for p in self.circuit.parameters}
+            for param, value in best_beam[2].items():
+                if param.name in circuit_params:
+                    self.trained_params[circuit_params[param.name]] = value
 
             # Re-evaluate on full dataset for accurate cost tracking
             best_cost = cost_fn_full(self.circuit, self.trained_params)
+
+            # Get last added gate from the best beam's history
+            last_gate = best_beam[3][-1] if best_beam[3] else None
 
             # Record history
             self.training_history.append({
                 'iteration': iteration + 1,
                 'cost': best_cost,
-                'n_gates': len(self.circuit_builder.gate_set.gate_history),
+                'circuit_depth': self.circuit.depth(),
                 'n_params': len(self.trained_params),
-                'gate_added': best_gate['type'],
+                'gate_added': last_gate['type'] if last_gate else 'none',
                 'improvement': improvement
             })
 
             if verbose:
-                print(f"Added gate: {best_gate['type']} on qubits {best_gate['qubits']}")
+                if last_gate:
+                    print(f"Added gate: {last_gate['type']} on qubits {last_gate['qubits']}")
                 print(f"Cost: {best_cost:.6f} (improvement: {improvement:.6f})")
                 print(f"Circuit depth: {self.circuit.depth()}, Parameters: {len(self.trained_params)}")
 
@@ -449,7 +504,7 @@ class AdaptiveQNN:
         if verbose:
             print(f"\n=== Training Complete ===")
             print(f"Final cost: {best_cost:.6f}")
-            print(f"Total gates: {len(self.circuit_builder.gate_set.gate_history)}")
+            print(f"Circuit depth: {self.circuit.depth()}")
             print(f"Total parameters: {len(self.trained_params)}")
             print(f"Measurements used: {self.estimator.get_measurement_count()}")
 
@@ -468,7 +523,8 @@ class AdaptiveQNN:
         if not self.is_trained:
             raise RuntimeError("Model must be trained before prediction")
 
-        X_processed = self.data_encoder.preprocess_data(X, method='minmax')
+        # Use stored preprocessing parameters from training
+        X_processed = (X - self._train_X_min) / self._train_X_range
         predictions = []
 
         for xi in X_processed:
@@ -496,7 +552,8 @@ class AdaptiveQNN:
         if not self.is_trained:
             raise RuntimeError("Model must be trained before prediction")
 
-        X_processed = self.data_encoder.preprocess_data(X, method='minmax')
+        # Use stored preprocessing parameters from training
+        X_processed = (X - self._train_X_min) / self._train_X_range
         probabilities = []
 
         for xi in X_processed:
