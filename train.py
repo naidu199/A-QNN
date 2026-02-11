@@ -25,7 +25,8 @@ from src.models.qnn_classifier import QNNClassifier
 from src.training import QNNTrainer, TrainingConfig
 from src.data import (
     load_iris_quantum, load_moons_quantum,
-    load_circles_quantum, generate_quantum_data
+    load_circles_quantum, generate_quantum_data,
+    load_breast_cancer_quantum, load_digits_quantum
 )
 from src.evaluation import compute_metrics, plot_training_history
 from src.utils import set_random_seed, timer, QNNConfig, get_preset
@@ -40,8 +41,9 @@ def parse_args():
 
     # Dataset options
     parser.add_argument('--dataset', type=str, default='moons',
-                        choices=['moons', 'circles', 'iris', 'xor', 'parity'],
-                        help='Dataset to use')
+                        choices=['moons', 'circles', 'iris', 'xor', 'parity', 'breast_cancer',
+                                 'digits', 'digits_even_odd', 'digits_low_high'],
+                        help='Dataset to use. digits_even_odd and digits_low_high have 1437 train samples!')
     parser.add_argument('--n_samples', type=int, default=200,
                         help='Number of samples for synthetic datasets')
     parser.add_argument('--noise', type=float, default=0.1,
@@ -61,8 +63,10 @@ def parse_args():
                         help='Maximum training iterations')
     parser.add_argument('--shots', type=int, default=1024,
                         help='Measurement shots per evaluation')
-    parser.add_argument('--threshold', type=float, default=1e-4,
+    parser.add_argument('--threshold', type=float, default=1e-5,
                         help='Improvement threshold for convergence')
+    parser.add_argument('--batch_size', type=int, default=64,
+                        help='Batch size for training')
 
     # Experiment options
     parser.add_argument('--seed', type=int, default=42,
@@ -121,6 +125,29 @@ def load_dataset(args):
             noise=args.noise,
             random_state=args.seed
         )
+    elif args.dataset == 'breast_cancer':
+        return load_breast_cancer_quantum(
+            n_qubits=args.n_qubits,
+            random_state=args.seed
+        )
+    elif args.dataset == 'digits':
+        return load_digits_quantum(
+            n_qubits=args.n_qubits,
+            n_classes=2,  # Binary: 0 vs 1
+            random_state=args.seed
+        )
+    elif args.dataset == 'digits_even_odd':
+        return load_digits_quantum(
+            n_qubits=args.n_qubits,
+            binary_mode='even_odd',  # All 1797 samples: even=0, odd=1
+            random_state=args.seed
+        )
+    elif args.dataset == 'digits_low_high':
+        return load_digits_quantum(
+            n_qubits=args.n_qubits,
+            binary_mode='low_high',  # All 1797 samples: 0-4=0, 5-9=1
+            random_state=args.seed
+        )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
@@ -160,6 +187,7 @@ def main():
         print(f"  Encoding:     {config.encoding_type}")
         print(f"  Max Gates:    {config.max_gates}")
         print(f"  Max Iter:     {config.max_iterations}")
+        print(f"  Batch Size:   {args.batch_size}")
         print(f"  Shots:        {config.shots}")
         print("")
 
@@ -196,7 +224,8 @@ def main():
             X_train, y_train,
             max_iterations=config.max_iterations,
             improvement_threshold=config.improvement_threshold,
-            verbose=verbose
+            verbose=verbose,
+            batch_size=args.batch_size
         )
 
     # Evaluate

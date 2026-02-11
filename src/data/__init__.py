@@ -9,7 +9,8 @@ from .datasets import (
     load_circles_quantum,
     generate_quantum_data,
     load_breast_cancer_quantum,
-    load_digits_quantum
+    load_digits_quantum,
+    load_large_classification_quantum
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "load_circles_quantum",
     "generate_quantum_data",
     "load_breast_cancer_quantum",
-    "load_digits_quantum"
+    "load_digits_quantum",
+    "load_large_classification_quantum"
 ]

@@ -258,7 +258,7 @@ class AdaptiveQNN:
 
     def build_initial_circuit(self, n_features: int) -> None:
         """
-        Build the initial circuit with data encoding layer.
+        Build the initial circuit with data encoding layer and entanglement.
 
         Args:
             n_features: Number of input features
@@ -267,6 +267,14 @@ class AdaptiveQNN:
 
         # Add encoding layer
         self.data_params = self.circuit_builder.add_encoding_layer()
+
+        # Add initial entanglement layer to connect all qubits
+        # This is crucial - without it, only qubit pairs adjacent to q0 affect output
+        for i in range(self.n_qubits - 1):
+            self.circuit_builder.circuit.cx(i, i + 1)
+        # Circular connection for better connectivity
+        if self.n_qubits > 2:
+            self.circuit_builder.circuit.cx(self.n_qubits - 1, 0)
 
         self.circuit = self.circuit_builder.get_circuit()
 
@@ -354,6 +362,13 @@ class AdaptiveQNN:
         # Each candidate tracks its own circuit builder and parameters
         beams = [(initial_cost, self.circuit_builder.copy(), dict(self.trained_params), [])]
 
+        # Track qubit usage for logging
+        qubit_usage = np.zeros(self.n_qubits)
+
+        # Track gate pair usage to penalize repeated placements
+        gate_pair_usage = {}  # (gate_type, tuple(qubits)) -> count
+        repetition_penalty = 0.08  # Cost penalty per repeated usage (forces exploration)
+
         for iteration in range(max_iterations):
             if verbose:
                 print(f"\n--- Iteration {iteration + 1} ---")
@@ -365,6 +380,20 @@ class AdaptiveQNN:
             X_batch = X_processed[batch_indices]
             y_batch = y[batch_indices]
             cost_fn_batch = self._create_cost_function(X_batch, y_batch)
+
+            # Re-evaluate existing beams on current batch for fair comparison
+            updated_beams = []
+            for _, beam_builder, beam_params, beam_gate_history in beams:
+                beam_circuit = beam_builder.get_circuit()
+                # Map params by name
+                beam_params_mapped = {}
+                circuit_params = {p.name: p for p in beam_circuit.parameters}
+                for param, value in beam_params.items():
+                    if param.name in circuit_params:
+                        beam_params_mapped[circuit_params[param.name]] = value
+                current_cost = cost_fn_batch(beam_circuit, beam_params_mapped)
+                updated_beams.append((current_cost, beam_builder, beam_params, beam_gate_history))
+            beams = updated_beams
 
             # Check measurement budget
             if self.estimator.get_measurement_count() >= self.measurement_budget:
@@ -391,6 +420,11 @@ class AdaptiveQNN:
                     param, _ = trial_builder.add_adaptive_gate(gate_template)
                     trial_circuit = trial_builder.get_circuit()
 
+                    # Calculate repetition penalty for this gate
+                    gate_key = (gate_template['type'], tuple(gate_template['qubits']))
+                    usage_count = gate_pair_usage.get(gate_key, 0)
+                    penalty = repetition_penalty * usage_count
+
                     if param is not None:
                         # Build trial params dict with parameters from the trial circuit
                         trial_params = {}
@@ -401,10 +435,10 @@ class AdaptiveQNN:
                                 trial_params[trial_circuit_params[orig_param.name]] = value
 
                         landscape_result = self.fourier_estimator.analyze_landscape(
-                            trial_circuit, param, cost_fn_batch, trial_params, n_samples=5
+                            trial_circuit, param, cost_fn_batch, trial_params, n_samples=11
                         )
                         optimal_value = landscape_result['optimal_theta']
-                        optimal_cost = landscape_result['optimal_cost']
+                        optimal_cost = landscape_result['optimal_cost'] + penalty  # Add repetition penalty
 
                         all_candidates.append((
                             optimal_cost, trial_builder, beam_params,
@@ -419,7 +453,7 @@ class AdaptiveQNN:
                             if orig_param.name in trial_circuit_params:
                                 trial_params[trial_circuit_params[orig_param.name]] = value
 
-                        trial_cost = cost_fn_batch(trial_circuit, trial_params)
+                        trial_cost = cost_fn_batch(trial_circuit, trial_params) + penalty  # Add repetition penalty
 
                         all_candidates.append((
                             trial_cost, trial_builder, beam_params,
@@ -483,6 +517,14 @@ class AdaptiveQNN:
             # Get last added gate from the best beam's history
             last_gate = best_beam[3][-1] if best_beam[3] else None
 
+            # Update qubit usage and gate pair usage for tracking
+            if last_gate:
+                for q in last_gate['qubits']:
+                    qubit_usage[q] += 1
+                # Track gate pair usage for repetition penalty
+                gate_key = (last_gate['type'], tuple(last_gate['qubits']))
+                gate_pair_usage[gate_key] = gate_pair_usage.get(gate_key, 0) + 1
+
             # Record history
             self.training_history.append({
                 'iteration': iteration + 1,
@@ -498,6 +540,7 @@ class AdaptiveQNN:
                     print(f"Added gate: {last_gate['type']} on qubits {last_gate['qubits']}")
                 print(f"Cost: {best_cost:.6f} (improvement: {improvement:.6f})")
                 print(f"Circuit depth: {self.circuit.depth()}, Parameters: {len(self.trained_params)}")
+                print(f"Qubit usage: {qubit_usage.astype(int).tolist()}")
 
         self.is_trained = True
 

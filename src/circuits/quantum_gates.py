@@ -299,7 +299,7 @@ def create_adaptive_gate_pool(n_qubits: int, reduced: bool = True) -> List[Dict[
     """
     pool = []
 
-    # Single-qubit rotation gates (always include)
+    # Single-qubit rotation gates on ALL qubits (important for expressivity)
     for gate_type in ['ry']:  # Ry is most useful for amplitude manipulation
         for qubit in range(n_qubits):
             pool.append({
@@ -320,7 +320,7 @@ def create_adaptive_gate_pool(n_qubits: int, reduced: bool = True) -> List[Dict[
                     'n_params': 1
                 })
 
-    # Two-qubit entangling gates - only linear connectivity for speed
+    # Two-qubit entangling gates - linear AND some skip connections
     for i in range(n_qubits - 1):
         pool.append({
             'type': 'cx',
@@ -335,7 +335,22 @@ def create_adaptive_gate_pool(n_qubits: int, reduced: bool = True) -> List[Dict[
             'n_params': 0
         })
 
-    # Controlled rotation gates - only linear connectivity
+    # Add skip connections for better connectivity (first to last, etc.)
+    if n_qubits >= 3:
+        pool.append({
+            'type': 'cx',
+            'qubits': [0, n_qubits - 1],
+            'parameterized': False,
+            'n_params': 0
+        })
+        pool.append({
+            'type': 'cx',
+            'qubits': [n_qubits - 1, 0],
+            'parameterized': False,
+            'n_params': 0
+        })
+
+    # Controlled rotation gates - linear AND skip connections
     for gate_type in ['cry']:  # CRY is most useful
         for i in range(n_qubits - 1):
             pool.append({
@@ -350,6 +365,36 @@ def create_adaptive_gate_pool(n_qubits: int, reduced: bool = True) -> List[Dict[
                 'parameterized': True,
                 'n_params': 1
             })
+
+        # Skip connections for CRY
+        if n_qubits >= 3:
+            pool.append({
+                'type': gate_type,
+                'qubits': [0, n_qubits - 1],
+                'parameterized': True,
+                'n_params': 1
+            })
+            pool.append({
+                'type': gate_type,
+                'qubits': [n_qubits - 1, 0],
+                'parameterized': True,
+                'n_params': 1
+            })
+            # Middle qubit connections
+            mid = n_qubits // 2
+            if mid != 0 and mid != n_qubits - 1:
+                pool.append({
+                    'type': gate_type,
+                    'qubits': [0, mid],
+                    'parameterized': True,
+                    'n_params': 1
+                })
+                pool.append({
+                    'type': gate_type,
+                    'qubits': [mid, n_qubits - 1],
+                    'parameterized': True,
+                    'n_params': 1
+                })
 
     if not reduced:
         # Full connectivity for controlled rotations

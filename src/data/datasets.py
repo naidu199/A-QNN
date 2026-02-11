@@ -7,7 +7,7 @@ Provides standard datasets prepared for quantum machine learning.
 
 import numpy as np
 from typing import Tuple, Optional
-from sklearn.datasets import load_iris, make_moons, make_circles
+from sklearn.datasets import load_iris, make_moons, make_circles, make_classification
 
 
 def load_iris_quantum(
@@ -263,15 +263,21 @@ def load_breast_cancer_quantum(
 def load_digits_quantum(
     n_qubits: int = 8,
     n_classes: int = 2,
+    classes: Optional[Tuple[int, int]] = None,
+    binary_mode: str = None,
     test_size: float = 0.2,
     random_state: Optional[int] = 42
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Load handwritten digits dataset for quantum processing.
 
+    Full dataset has 1797 samples across 10 digit classes.
+
     Args:
         n_qubits: Number of qubits
-        n_classes: Number of digit classes to use
+        n_classes: Number of digit classes to use (uses 0 to n_classes-1)
+        classes: Specific classes to use, e.g. (3, 8) for digits 3 vs 8. Overrides n_classes.
+        binary_mode: 'even_odd' (even vs odd, 1797 samples) or 'low_high' (0-4 vs 5-9, 1797 samples)
         test_size: Test set fraction
         random_state: Random seed
 
@@ -286,9 +292,23 @@ def load_digits_quantum(
     digits = load_digits()
     X, y = digits.data, digits.target
 
-    # Filter to n_classes
-    mask = y < n_classes
-    X, y = X[mask], y[mask]
+    # Apply binary mode if specified (uses ALL data!)
+    if binary_mode == 'even_odd':
+        # Even digits (0,2,4,6,8) = class 0, Odd digits (1,3,5,7,9) = class 1
+        y = (y % 2).astype(int)
+    elif binary_mode == 'low_high':
+        # Low digits (0-4) = class 0, High digits (5-9) = class 1
+        y = (y >= 5).astype(int)
+    elif classes is not None:
+        # Use specific class pair (e.g., 3 vs 8)
+        mask = np.isin(y, classes)
+        X, y = X[mask], y[mask]
+        # Remap to 0/1 for binary classification
+        y = (y == classes[1]).astype(int)
+    else:
+        # Use first n_classes (0, 1, 2, ...)
+        mask = y < n_classes
+        X, y = X[mask], y[mask]
 
     # Scale
     scaler = MinMaxScaler()
@@ -305,6 +325,59 @@ def load_digits_quantum(
     # Split
     X_train, X_test, y_train, y_test = train_test_split(
         X_final, y, test_size=test_size, random_state=random_state, stratify=y
+    )
+
+    return X_train, X_test, y_train, y_test
+
+
+def load_large_classification_quantum(
+    n_samples: int = 1000,
+    n_qubits: int = 6,
+    n_informative: int = 4,
+    test_size: float = 0.2,
+    random_state: Optional[int] = 42,
+    class_sep: float = 1.0
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load a large synthetic classification dataset for quantum processing.
+
+    Uses sklearn's make_classification to generate complex, scalable data
+    suitable for comparing QNN approaches at scale.
+
+    Args:
+        n_samples: Total number of samples (1000+ recommended for meaningful comparison)
+        n_qubits: Number of qubits (features)
+        n_informative: Number of informative features (rest are redundant/noisy)
+        test_size: Test set fraction
+        random_state: Random seed for reproducibility
+        class_sep: Class separation factor (higher = easier to classify)
+
+    Returns:
+        X_train, X_test, y_train, y_test
+    """
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import MinMaxScaler
+
+    # Generate classification data with sklearn
+    X, y = make_classification(
+        n_samples=n_samples,
+        n_features=n_qubits,
+        n_informative=min(n_informative, n_qubits),
+        n_redundant=max(0, n_qubits - n_informative - 1),
+        n_clusters_per_class=2,
+        n_classes=2,
+        flip_y=0.05,  # 5% label noise for realism
+        class_sep=class_sep,
+        random_state=random_state
+    )
+
+    # Scale to [0, π] for angle encoding
+    scaler = MinMaxScaler(feature_range=(0, np.pi))
+    X_scaled = scaler.fit_transform(X)
+
+    # Split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
     return X_train, X_test, y_train, y_test
