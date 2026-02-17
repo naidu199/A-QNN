@@ -12,7 +12,7 @@
   "methods": {
     "ARC_QNN": {
       "method": "ARC_QNN",
-      "training_time": 147.7697684764862,
+      "training_time": 119.28693580627441,
       "train_metrics": {
         "accuracy": 0.825,
         "balanced_accuracy": 0.825,
@@ -66,7 +66,7 @@
     },
     "Fixed_QNN_COBYLA": {
       "method": "Fixed_QNN_COBYLA",
-      "training_time": 29.635826349258423,
+      "training_time": 20.03771162033081,
       "train_metrics": {
         "accuracy": 0.53125,
         "balanced_accuracy": 0.53125,
@@ -218,7 +218,7 @@
     }
   },
   "hardware_results": {
-    "backend": "ibm_brisbane",
+    "backend": "auto",
     "shots": 4096,
     "results": {
       "ARC_QNN": {
@@ -356,8 +356,8 @@
           1,
           0
         ],
-        "execution_time": 0.0060672760009765625,
-        "backend": "ibm_brisbane",
+        "execution_time": 0.37969541549682617,
+        "backend": "ibm_marrakesh",
         "shots": 4096
       },
       "Fixed_QNN_COBYLA": {
@@ -495,8 +495,8 @@
           1,
           0
         ],
-        "execution_time": 0.05999922752380371,
-        "backend": "ibm_brisbane",
+        "execution_time": 0.38693737983703613,
+        "backend": "ibm_marrakesh",
         "shots": 4096
       }
     }

@@ -21,6 +21,7 @@ from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Parameter, ParameterVector
 from qiskit.quantum_info import Statevector, SparsePauliOp
 from sklearn.metrics import log_loss
+from joblib import Parallel, delayed
 import time
 import warnings
 
@@ -140,7 +141,7 @@ def build_gate_circuit(
         elif gate_type == 'U3':
             circuit.ry(angle * param_val, qreg[j])
         elif gate_type == 'H':
-            circuit.h(qreg[j])
+            circuit.h(qreg[j])  # reference: H gate has no rz after it
         elif gate_type == 'Rz':
             circuit.rz(angle, qreg[j])
         elif gate_type == 'Rx':
@@ -194,16 +195,20 @@ class ARCEstimator:
         num_samples_classical: int = 1000,
         convergence_threshold: float = 1e-8,
         max_gates: int = 150,
-        verbose: bool = True
+        verbose: bool = True,
+        subsample_size: int = 100,
+        n_jobs: int = -1
     ):
         """
         Args:
             n_qubits: Number of qubits
             gate_list: Gate types to use (default: ['U1', 'U2', 'U3', 'H', 'X', 'Z'])
-            num_samples_classical: Number of θ samples for classical optimization
+            num_samples_classical: Number of theta samples for classical optimization
             convergence_threshold: Stop when cost improvement < this
             max_gates: Maximum number of gates to add
             verbose: Print progress
+            subsample_size: Training samples per gate iteration (reference uses 100)
+            n_jobs: Number of parallel jobs for joblib (-1 = all cores)
         """
         self.n_qubits = n_qubits
         self.gate_list = gate_list or ['U1', 'U2', 'U3', 'H', 'X', 'Z']
@@ -211,6 +216,8 @@ class ARCEstimator:
         self.convergence_threshold = convergence_threshold
         self.max_gates = max_gates
         self.verbose = verbose
+        self.subsample_size = subsample_size
+        self.n_jobs = n_jobs
 
         # Build gate pool
         self.gate_pool = ARCGatePool(self.gate_list, n_qubits)
@@ -222,7 +229,7 @@ class ARCEstimator:
         self.total_measurements = 0
 
     def _initialize_circuit(self) -> QuantumCircuit:
-        """Create an empty circuit."""
+        """Create empty circuit (matching reference: no initial encoding)."""
         qreg = QuantumRegister(self.n_qubits, 'qc')
         return QuantumCircuit(qreg)
 
@@ -375,32 +382,29 @@ class ARCEstimator:
                 CC[:] = c
             else:
                 # Subsequent gates: data-dependent a,b,c per data point
-                for i in range(n_samples):
-                    expect_test = [0, 0, 0]
+                # Pre-build the 3 test gates (shared across all samples)
+                test_gates_prebuilt = []
+                for kt in range(3):
+                    gate_desc_feat = gate_desc.copy()
+                    for q in range(self.n_qubits):
+                        if gate_desc_feat[q] != '111111':
+                            g, _ = str(gate_desc_feat[q]).split('_')
+                            gate_desc_feat[q] = f'{g}_{feat}'
+                    test_gate = build_gate_circuit(
+                        gate_desc_feat, self.n_qubits, theta_test[kt],
+                        ParameterVector('t', n_features), feat
+                    )
+                    test_params = {p: 1.0 for p in test_gate.parameters}
+                    if test_params:
+                        test_gate = test_gate.assign_parameters(test_params)
+                    test_gates_prebuilt.append(test_gate)
+
+                # Parallel per-sample ABC computation (like reference layerParallel)
+                def _compute_abc_sample(i):
+                    """Compute a, b, c for a single data point."""
+                    expect_test = [0.0, 0.0, 0.0]
                     for kt in range(3):
-                        gate_desc_feat = gate_desc.copy()
-                        for q in range(self.n_qubits):
-                            if gate_desc_feat[q] != '111111':
-                                g, _ = str(gate_desc_feat[q]).split('_')
-                                gate_desc_feat[q] = f'{g}_{feat}'
-
-                        test_gate = build_gate_circuit(
-                            gate_desc_feat, self.n_qubits, theta_test[kt],
-                            ParameterVector('t', n_features), feat
-                        )
-
-                        # Assign data feature value
-                        test_params = {}
-                        for p in test_gate.parameters:
-                            test_params[p] = float(X[i][feat]) if 'x' not in p.name else float(X[i][feat])
-                        if not test_params:
-                            test_params = {p: 1.0 for p in test_gate.parameters}
-                        if test_params:
-                            test_gate = test_gate.assign_parameters(test_params)
-
-                        # Build full circuit with data
                         test_circuit = base_circuit.copy()
-
                         # Bind existing data params
                         existing_params = {}
                         for p in test_circuit.parameters:
@@ -412,21 +416,25 @@ class ARCEstimator:
                         if existing_params:
                             test_circuit = test_circuit.assign_parameters(existing_params)
 
-                        test_circuit.compose(test_gate, qubits=list(range(self.n_qubits)), inplace=True)
+                        test_circuit.compose(test_gates_prebuilt[kt], qubits=list(range(self.n_qubits)), inplace=True)
 
-                        # Remove any remaining params
                         final_params = {p: 0.0 for p in test_circuit.parameters}
                         if final_params:
                             test_circuit = test_circuit.assign_parameters(final_params)
 
                         sv = Statevector(test_circuit)
                         expect_test[kt] = sv.probabilities()[0]
-                        self.total_measurements += 1
-
                     a, b, c = determine_sine_curve(expect_test[0], expect_test[1], expect_test[2])
+                    return i, a, b, c
+
+                results = Parallel(n_jobs=self.n_jobs)(
+                    delayed(_compute_abc_sample)(i) for i in range(n_samples)
+                )
+                for i, a, b, c in results:
                     AA[i] = a
                     BB[i] = b
                     CC[i] = c
+                self.total_measurements += n_samples * 3
 
             # Find optimal theta by grid search on the reconstructed cost
             opt_theta, opt_cost = self._find_optimal_theta(
@@ -503,15 +511,33 @@ class ARCEstimator:
         Returns:
             (circuit, gate_sequence, cost_history)
         """
+        # ---- Add constant bias feature (π) like reference paper ----
+        # Reference: normalized_Xtrain[i][-1] = np.pi
+        # Ensures at least one feature always has full rotation range
+        bias = np.full((len(X), 1), np.pi)
+        X = np.hstack([X, bias])
+        n_features = X.shape[1]
+        if len(params) < n_features:
+            params = ParameterVector('x', n_features)
+        if self.verbose:
+            print(f"  Bias feature (pi) added -> {n_features} total features")
+
         self.circuit = self._initialize_circuit()
         self.gate_sequence = []
         self.cost_history = []
-
-        n_features = X.shape[1] if X.ndim > 1 else 1
+        self._params = params
+        self._X_has_bias = True
         count = 0
 
         while count < self.max_gates:
             t0 = time.time()
+
+            # Subsample training data for speed
+            if self.subsample_size > 0 and len(X) > self.subsample_size:
+                idx = np.random.choice(len(X), self.subsample_size, replace=False)
+                X_sub, y_sub = X[idx], y[idx]
+            else:
+                X_sub, y_sub = X, y
 
             best_cost = np.inf
             best_gate_idx = -1
@@ -519,18 +545,13 @@ class ARCEstimator:
             best_theta = 0
             best_gate_desc = None
 
-            # Evaluate each candidate gate
+            # Evaluate each candidate gate (like reference main loop)
             for mf in range(len(self.gate_pool)):
                 opt_thetas, opt_costs = self._evaluate_gate_candidate(
-                    self.circuit, mf, X, y, params, count
+                    self.circuit, mf, X_sub, y_sub, params, count
                 )
 
                 for feat in range(n_features):
-                    if self.verbose:
-                        print(f'  Gate {self.gate_pool[mf]} Feature {feat} '
-                              f'Angle {opt_thetas[feat]:.5f} Cost {opt_costs[feat]:.5f}',
-                              flush=True)
-
                     if opt_costs[feat] < best_cost:
                         best_cost = opt_costs[feat]
                         best_gate_idx = mf
@@ -538,15 +559,7 @@ class ARCEstimator:
                         best_theta = opt_thetas[feat]
                         best_gate_desc = self.gate_pool[mf].copy()
 
-            # Check convergence
-            if count > 0 and len(self.cost_history) > 0:
-                improvement = self.cost_history[-1] - best_cost
-                if improvement < self.convergence_threshold:
-                    if self.verbose:
-                        print(f'Converged at gate {count}: improvement {improvement:.2e}')
-                    break
-
-            # Add the best gate to the circuit
+            # --- Add the best gate FIRST (like reference impl) ---
             gate_desc_feat = best_gate_desc.copy()
             for q in range(self.n_qubits):
                 if gate_desc_feat[q] != '111111':
@@ -566,32 +579,49 @@ class ARCEstimator:
                 'gate_idx': best_gate_idx
             })
             self.cost_history.append(best_cost)
+            count += 1
 
             t1 = time.time()
             if self.verbose:
-                print(f'\n=== Gate {count}: cost={best_cost:.6f}, '
-                      f'θ={best_theta:.5f}, feat={best_feature}, '
-                      f'time={t1-t0:.1f}s ===\n', flush=True)
+                gate_name = best_gate_desc.tolist()
+                n_sub = len(X_sub)
+                print(f'Gate {count}: cost={best_cost:.6f}, '
+                      f'theta={best_theta:.5f}, feat={best_feature}, '
+                      f'gate={gate_name}, '
+                      f'samples={n_sub}, time={t1-t0:.1f}s', flush=True)
 
-            count += 1
+            # Convergence check (matches reference exactly)
+            if count > 1 and len(self.cost_history) >= 2:
+                if self.cost_history[-2] - self.cost_history[-1] < self.convergence_threshold:
+                    if self.verbose:
+                        print(f'Converged at gate {count}')
+                    break
 
         return self.circuit, self.gate_sequence, self.cost_history
 
     def predict(
         self,
         X: np.ndarray,
-        params: ParameterVector
+        params: ParameterVector = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict using the reconstructed circuit.
 
         Args:
             X: Input features
-            params: Parameter vector
+            params: Parameter vector (uses stored params if None)
 
         Returns:
             (predictions, probabilities): Labels and raw probabilities
         """
+        if params is None:
+            params = self._params
+
+        # Append bias feature (always added during training)
+        if getattr(self, '_X_has_bias', False):
+            bias = np.full((len(X), 1), np.pi)
+            X = np.hstack([X, bias])
+
         probs = []
         for xi in X:
             p = self._evaluate_expectation(self.circuit, xi, params)

@@ -12,7 +12,7 @@
   "methods": {
     "ARC_QNN": {
       "method": "ARC_QNN",
-      "training_time": 25.621201276779175,
+      "training_time": 23.78836464881897,
       "train_metrics": {
         "accuracy": 0.775,
         "balanced_accuracy": 0.775,
@@ -66,7 +66,7 @@
     },
     "Fixed_QNN_COBYLA": {
       "method": "Fixed_QNN_COBYLA",
-      "training_time": 0.6105213165283203,
+      "training_time": 0.15001296997070312,
       "train_metrics": {
         "accuracy": 0.6,
         "balanced_accuracy": 0.6,
@@ -125,6 +125,110 @@
       "circuit_depth": 5,
       "n_parameters": 4,
       "total_measurements": 450
+    }
+  },
+  "hardware_results": {
+    "backend": "auto",
+    "shots": 4096,
+    "results": {
+      "ARC_QNN": {
+        "accuracy": 0.7,
+        "balanced_accuracy": 0.7,
+        "accuracy_optimal_threshold": 0.9,
+        "balanced_accuracy_optimal": 0.9,
+        "acc_class_0": 0.8,
+        "acc_class_1": 1.0,
+        "optimal_threshold": 0.2365054532662087,
+        "log_loss": 0.4126290404711262,
+        "probabilities": [
+          0.001089681373762337,
+          0.3589167989501694,
+          0.004532537892382454,
+          0.003506597109964298,
+          0.3345698326506417,
+          0.8732420563004498,
+          0.4369979441821741,
+          0.9611109596030075,
+          0.1243774286592879,
+          0.2365054532662087
+        ],
+        "predictions": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0
+        ],
+        "predictions_optimal": [
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0,
+          1
+        ],
+        "execution_time": 0.3813652992248535,
+        "backend": "ibm_marrakesh",
+        "shots": 4096
+      },
+      "Fixed_QNN_COBYLA": {
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "accuracy_optimal_threshold": 0.9,
+        "balanced_accuracy_optimal": 0.9,
+        "acc_class_0": 1.0,
+        "acc_class_1": 0.8,
+        "optimal_threshold": 0.16581799346338363,
+        "log_loss": 1.0327744807516546,
+        "probabilities": [
+          0.0003468243390332462,
+          0.07027014397446973,
+          0.002213914301946099,
+          0.0010085151513788634,
+          0.24338287537836184,
+          0.3430655103402108,
+          0.015233941721316447,
+          0.16581799346338363,
+          0.008326107618358234,
+          0.16882321267975642
+        ],
+        "predictions": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "predictions_optimal": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1
+        ],
+        "execution_time": 0.3370702266693115,
+        "backend": "ibm_marrakesh",
+        "shots": 4096
+      }
     }
   }
 }

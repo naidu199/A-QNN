@@ -45,7 +45,8 @@ class IBMQuantumRunner:
         shots: int = 4096,
         optimization_level: int = 2,
         ibm_token: Optional[str] = None,
-        channel: str = 'ibm_quantum',
+        channel: str = 'ibm_cloud',
+        instance: Optional[str] = None,
         use_error_mitigation: bool = True,
         verbose: bool = True
     ):
@@ -56,10 +57,12 @@ class IBMQuantumRunner:
                 - 'aer_qasm': Local Aer QASM simulator
                 - 'fake_<name>': Fake backend with noise model
                 - '<real_backend>': Real IBM Quantum backend
+                  (e.g. ibm_fez, ibm_torino, ibm_marrakesh)
             shots: Number of measurement shots
             optimization_level: Transpilation optimization level (0-3)
             ibm_token: IBM Quantum API token (reads from env if not provided)
-            channel: IBM Quantum channel
+            channel: IBM Quantum channel ('ibm_cloud' or 'ibm_quantum_platform')
+            instance: IBM Cloud instance (optional, auto-detected if omitted)
             use_error_mitigation: Enable error mitigation
             verbose: Print progress
         """
@@ -73,9 +76,10 @@ class IBMQuantumRunner:
         self.service = None
         self.session = None
 
-        self._setup_backend(ibm_token, channel)
+        self._setup_backend(ibm_token, channel, instance)
 
-    def _setup_backend(self, ibm_token: Optional[str], channel: str):
+    def _setup_backend(self, ibm_token: Optional[str], channel: str,
+                        instance: Optional[str] = None):
         """Initialize the quantum backend."""
         if self.backend_name == 'aer_simulator':
             from qiskit_aer import AerSimulator
@@ -96,46 +100,120 @@ class IBMQuantumRunner:
                 if fake_name in available:
                     self.backend = available[fake_name]
                 else:
-                    if self.verbose:
-                        print(f"Fake backend '{fake_name}' not found. "
-                              f"Available: {list(available.keys())[:5]}...")
+                    print(f"[WARNING] Fake backend '{fake_name}' not found. "
+                          f"Available: {list(available.keys())[:5]}...")
                     from qiskit_aer import AerSimulator
                     self.backend = AerSimulator()
                 self.execution_mode = 'qasm'
             except ImportError:
-                warnings.warn("qiskit_ibm_runtime not available, using Aer")
+                print("[WARNING] qiskit_ibm_runtime not available, using Aer")
                 from qiskit_aer import AerSimulator
                 self.backend = AerSimulator()
                 self.execution_mode = 'qasm'
 
         else:
-            # Real IBM Quantum backend
+            # Real IBM Quantum backend (or 'auto' for automatic selection)
+            self._connect_ibm(ibm_token, channel, instance)
+
+    def _connect_ibm(self, ibm_token: Optional[str], channel: str,
+                     instance: Optional[str] = None):
+        """Connect to a real IBM Quantum backend.
+
+        Uses ``QiskitRuntimeService.save_account`` so that the token is
+        persisted and ``least_busy()`` works out of the box.  If
+        ``self.backend_name`` is ``'auto'``, the least-busy operational
+        backend is selected automatically via the official API.
+        """
+        from qiskit_ibm_runtime import QiskitRuntimeService
+
+        token = ibm_token or os.environ.get('IBM_TOKEN') or os.environ.get('IBM_QUANTUM_TOKEN')
+        if not token:
+            raise ValueError(
+                "IBM Quantum token is required for real backend. "
+                "Set IBM_TOKEN in .env, pass --ibm_token, or set IBM_QUANTUM_TOKEN env variable."
+            )
+
+        # Save credentials so QiskitRuntimeService() works without args
+        try:
+            QiskitRuntimeService.save_account(token=token, overwrite=True)
+        except Exception:
+            pass  # already saved or read-only – fine
+
+        # Connect (saved account is picked up automatically)
+        try:
+            service = QiskitRuntimeService()
+        except Exception as e:
+            raise ConnectionError(f"Could not connect to IBM Quantum: {e}")
+
+        self.service = service
+
+        # List operational backends
+        try:
+            available_backends = service.backends(operational=True, simulator=False)
+        except Exception as e:
+            raise ConnectionError(f"Authenticated but could not list backends: {e}")
+
+        if not available_backends:
+            raise ConnectionError("No operational backends available on your IBM account.")
+
+        available_names = [b.name for b in available_backends]
+        if self.verbose:
+            print(f"  Available backends ({len(available_names)}): {available_names}")
+            for b in available_backends:
+                s = b.status()
+                pending = getattr(s, 'pending_jobs', '?')
+                print(f"    {b.name}: {b.num_qubits}q, pending_jobs={pending}")
+
+        # ---- Select backend ------------------------------------------------
+        if self.backend_name in ('auto', 'ibm_auto'):
+            # Use the official least_busy API
             try:
-                from qiskit_ibm_runtime import QiskitRuntimeService
+                selected = service.least_busy(
+                    operational=True, simulator=False, min_num_qubits=2
+                )
+            except Exception:
+                # Fallback: manual least-busy selection
+                selected = self._pick_least_busy(available_backends)
+            self.backend_name = selected.name
+            self.backend = selected
+        else:
+            if self.backend_name not in available_names:
+                raise ValueError(
+                    f"Backend '{self.backend_name}' not found.\n"
+                    f"Available backends: {available_names}\n"
+                    f"Tip: use --ibm_backend auto  to pick one automatically."
+                )
+            self.backend = service.backend(self.backend_name)
 
-                token = ibm_token or os.environ.get('IBM_QUANTUM_TOKEN', None)
-                if token:
-                    self.service = QiskitRuntimeService(
-                        channel=channel,
-                        token=token
-                    )
-                else:
-                    # Try saved credentials
-                    self.service = QiskitRuntimeService(channel=channel)
+        self.execution_mode = 'ibm_runtime'
 
-                self.backend = self.service.backend(self.backend_name)
-                self.execution_mode = 'ibm_runtime'
+        if self.verbose:
+            s = self.backend.status()
+            pending = getattr(s, 'pending_jobs', '?')
+            print(f"  >> Selected: {self.backend_name} "
+                  f"({self.backend.num_qubits}q, pending={pending})")
 
-                if self.verbose:
-                    print(f"Connected to IBM Quantum backend: {self.backend_name}")
-                    print(f"  Qubits: {self.backend.num_qubits}")
-
-            except Exception as e:
-                warnings.warn(f"Could not connect to IBM backend: {e}. "
-                             f"Falling back to Aer simulator.")
-                from qiskit_aer import AerSimulator
-                self.backend = AerSimulator()
-                self.execution_mode = 'statevector'
+    @staticmethod
+    def _pick_least_busy(backends) -> Any:
+        """Return the operational backend with the fewest pending jobs."""
+        best = None
+        best_pending = float('inf')
+        for b in backends:
+            try:
+                status = b.status()
+                pending = getattr(status, 'pending_jobs', float('inf'))
+                operational = getattr(status, 'operational', True)
+                if not operational:
+                    continue
+                if pending < best_pending:
+                    best_pending = pending
+                    best = b
+            except Exception:
+                # If status() is unavailable just consider the backend
+                if best is None:
+                    best = b
+        # Fallback: first backend if nothing else worked
+        return best if best is not None else backends[0]
 
     def transpile_circuit(
         self,
@@ -316,22 +394,27 @@ class IBMQuantumRunner:
             print(f"  Running {len(X)} circuits on {self.backend_name}...")
 
         try:
-            with Session(service=self.service, backend=self.backend) as session:
-                sampler = Sampler(session=session)
+            with Session(backend=self.backend) as session:
+                sampler = Sampler(mode=session)
 
                 # Batch parameter bindings
-                for batch_start in range(0, len(X), 100):
-                    batch_end = min(batch_start + 100, len(X))
+                batch_size = 100
+                for batch_start in range(0, len(X), batch_size):
+                    batch_end = min(batch_start + batch_size, len(X))
                     batch_X = X[batch_start:batch_end]
 
                     pubs = []
                     for xi in batch_X:
                         param_dict = {}
+                        circuit_param_names = {p.name: p for p in transpiled.parameters}
                         for j in range(min(len(xi), len(data_params))):
-                            param_dict[data_params[j]] = float(xi[j])
+                            if data_params[j].name in circuit_param_names:
+                                param_dict[circuit_param_names[data_params[j].name]] = float(xi[j])
                         if var_params:
                             for p_name, val in var_params.items():
-                                param_dict[p_name] = float(val)
+                                name = p_name if isinstance(p_name, str) else p_name.name
+                                if name in circuit_param_names:
+                                    param_dict[circuit_param_names[name]] = float(val)
                         for p in transpiled.parameters:
                             if p not in param_dict:
                                 param_dict[p] = 0.0
@@ -339,7 +422,12 @@ class IBMQuantumRunner:
                         bound = transpiled.assign_parameters(param_dict)
                         pubs.append(bound)
 
-                    result = sampler.run(pubs, shots=self.shots).result()
+                    if self.verbose:
+                        print(f"  Submitting batch {batch_start//batch_size + 1} "
+                              f"({len(pubs)} circuits) to {self.backend_name}...")
+
+                    job = sampler.run(pubs, shots=self.shots)
+                    result = job.result()
 
                     for idx, pub_result in enumerate(result):
                         counts = pub_result.data.meas.get_counts()
@@ -347,10 +435,12 @@ class IBMQuantumRunner:
                         probs[batch_start + idx] = counts.get(zero_key, 0) / self.shots
 
                 if self.verbose:
-                    print(f"  IBM Runtime execution complete")
+                    print(f"  IBM Runtime execution complete ({len(X)} circuits)")
 
         except Exception as e:
-            warnings.warn(f"IBM Runtime execution failed: {e}. Using statevector.")
+            print(f"\n[ERROR] IBM Runtime execution failed: {e}")
+            print("  Falling back to local statevector simulation.")
+            print("  The results below are NOT from real hardware.")
             for i, xi in enumerate(X):
                 probs[i] = self._eval_statevector(circuit, xi, data_params, var_params)
 

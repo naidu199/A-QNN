@@ -17,11 +17,11 @@ Train Accuracy            | 0.8250               | 0.5312
 Circuit Depth             | 2                    | 20                  
 Num Parameters            | 2                    | 24                  
 Num Gates                 | 2                    | 20                  
-Training Time (s)         | 147.7698             | 29.6358             
+Training Time (s)         | 119.2869             | 20.0377             
 Total Measurements        | 92648                | 16200               
 --------------------------------------------------------------------------------
 
-Hardware Results (Backend: ibm_brisbane, Shots: 4096)
+Hardware Results (Backend: auto, Shots: 4096)
 --------------------------------------------------------------------------------
 Metric                    | ARC_QNN              | Fixed_QNN_COBYLA    
 --------------------------------------------------------------------------------
@@ -29,7 +29,7 @@ HW Accuracy               | 0.7250               | 0.5250
 HW Balanced Acc           | 0.7250               | 0.5250              
 HW Acc (Opt Thresh)       | 0.8250               | 0.9250              
 HW Log-Loss               | 0.3960               | 0.5478              
-HW Exec Time (s)          | 0.0061               | 0.0600              
+HW Exec Time (s)          | 0.3797               | 0.3869              
 --------------------------------------------------------------------------------
 
 Conclusion:

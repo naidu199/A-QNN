@@ -45,7 +45,9 @@ class QNNComparisonPipeline:
         fixed_layers: int = 3,
         fixed_max_iter: int = 100,
         seed: int = 42,
-        verbose: bool = True
+        verbose: bool = True,
+        arc_subsample_size: int = 100,
+        n_jobs: int = -1
     ):
         """
         Args:
@@ -57,6 +59,8 @@ class QNNComparisonPipeline:
             fixed_max_iter: Max iterations for fixed ansatz optimizer
             seed: Random seed
             verbose: Print progress
+            arc_subsample_size: Training samples per gate iteration (reference uses 100)
+            n_jobs: Number of parallel jobs for joblib (-1 = all cores)
         """
         self.n_qubits = n_qubits
         self.arc_gate_list = arc_gate_list or ['U1', 'U2', 'U3', 'H', 'X', 'Z']
@@ -66,6 +70,8 @@ class QNNComparisonPipeline:
         self.fixed_max_iter = fixed_max_iter
         self.seed = seed
         self.verbose = verbose
+        self.arc_subsample_size = arc_subsample_size
+        self.n_jobs = n_jobs
 
         np.random.seed(seed)
 
@@ -167,7 +173,9 @@ class QNNComparisonPipeline:
             gate_list=self.arc_gate_list,
             num_samples_classical=self.arc_num_samples,
             max_gates=self.arc_max_gates,
-            verbose=self.verbose
+            verbose=self.verbose,
+            subsample_size=self.arc_subsample_size,
+            n_jobs=self.n_jobs
         )
 
         t0 = time.time()
@@ -176,9 +184,9 @@ class QNNComparisonPipeline:
         )
         training_time = time.time() - t0
 
-        # Predict
-        train_preds, train_probs = estimator.predict(X_train, params)
-        test_preds, test_probs = estimator.predict(X_test, params)
+        # Predict (use stored params — may include bias feature)
+        train_preds, train_probs = estimator.predict(X_train)
+        test_preds, test_probs = estimator.predict(X_test)
 
         # Metrics
         train_metrics = self._compute_metrics(y_train, train_preds, train_probs)
@@ -359,7 +367,8 @@ class QNNComparisonPipeline:
         y_test: np.ndarray,
         backend_name: str = 'aer_simulator',
         shots: int = 4096,
-        ibm_token: Optional[str] = None
+        ibm_token: Optional[str] = None,
+        channel: str = 'ibm_cloud'
     ) -> Dict[str, Any]:
         """
         Run trained circuits on IBM Quantum hardware or simulator.
@@ -371,6 +380,7 @@ class QNNComparisonPipeline:
             backend_name: IBM backend name
             shots: Number of shots
             ibm_token: API token
+            channel: IBM Quantum channel
 
         Returns:
             Hardware execution results
@@ -381,6 +391,7 @@ class QNNComparisonPipeline:
             backend_name=backend_name,
             shots=shots,
             ibm_token=ibm_token,
+            channel=channel,
             verbose=self.verbose
         )
 

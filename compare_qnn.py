@@ -22,7 +22,7 @@ MNIST 0-vs-1 (7×7 PCA to n_qubits features):
     python compare_qnn.py --dataset mnist_0_1_7x7 --n_qubits 4
 
 Full comparison with IBM hardware:
-    python compare_qnn.py --dataset moons --n_qubits 4 --ibm_backend ibm_brisbane --ibm_token YOUR_TOKEN
+    python compare_qnn.py --dataset moons --n_qubits 4 --ibm_token YOUR_TOKEN
 
 Barren-plateau analysis (variance of cost across random inits):
     python compare_qnn.py --dataset moons --n_qubits 4 --barren_plateau --bp_trials 20
@@ -35,7 +35,16 @@ import time
 import json
 import numpy as np
 import warnings
-warnings.filterwarnings('ignore')
+# Suppress noisy library warnings but keep our own print-based messages
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+
+# ---- Load .env file ---------------------------------------------------------
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed; user can still set env vars manually
 
 # ---- project root on sys.path -----------------------------------------------
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -46,20 +55,43 @@ if ROOT not in sys.path:
 # Dataset helpers
 # =============================================================================
 
-def load_reference_dataset(name: str, n_qubits: int):
-    """Load a dataset from the reference project's CSV files."""
-    data_dir = os.path.join(ROOT, 'Analytic-QNN-Reconstruction', 'Datasets')
+# All reference-style CSV datasets
+REFERENCE_DATASETS = {
+    'two-curves':        ('two-curves_train_1000',       'two-curves_test_1000'),
+    'linearly-separable':('linearly-separable_train_1000','linearly-separable_test_1000'),
+    'bars-and-stripes':  ('bars-and-stripes_4d_1000',    'bars-and-stripes_4d_200'),
+    'mnist_0_1_7x7':     ('mnist_train_0_1_7x7_N_1000',  'mnist_test_0_1_7x7_N_1000'),
+    'mnist_0_1_14x14':   ('mnist_train_0_1_14x14_N_1000', 'mnist_test_0_1_14x14_N_1000'),
+    'mnist_0_1_28x28':   ('mnist_train_0_1_28x28_N_1000', 'mnist_test_0_1_28x28_N_1000'),
+    'mnist_3_5_7x7':     ('mnist_train_3_5_7x7_N_1000',  'mnist_test_3_5_7x7_N_1000'),
+    'mnist_3_5_14x14':   ('mnist_train_3_5_14x14_N_1000', 'mnist_test_3_5_14x14_N_1000'),
+    'mnist_3_5_28x28':   ('mnist_train_3_5_28x28_N_1000', 'mnist_test_3_5_28x28_N_1000'),
+    'mnist_pca_10d':     ('mnist-pca_train_10d_11552',   'mnist-pca_test_10d_1902'),
+}
 
-    dataset_map = {
-        'two-curves': ('two-curves_train_1000', 'two-curves_test_1000'),
-        'linearly-separable': ('linearly-separable_train_1000', 'linearly-separable_test_1000'),
-        'bars-and-stripes': ('bars-and-stripes_4d_1000', 'bars-and-stripes_4d_200'),
-        'mnist_0_1_7x7': ('mnist_train_0_1_7x7_N_1000', 'mnist_test_0_1_7x7_N_1000'),
-        'mnist_0_1_14x14': ('mnist_train_0_1_14x14_N_1000', 'mnist_test_0_1_14x14_N_1000'),
-        'mnist_3_5_7x7': ('mnist_train_3_5_7x7_N_1000', 'mnist_test_3_5_7x7_N_1000'),
-        'mnist_3_5_14x14': ('mnist_train_3_5_14x14_N_1000', 'mnist_test_3_5_14x14_N_1000'),
-        'mnist_pca_10d': ('mnist-pca_train_10d_11552', 'mnist-pca_test_10d_1902'),
-    }
+def _find_data_dir():
+    """Return the first existing Datasets directory."""
+    candidates = [
+        os.path.join(ROOT, 'Datasets'),
+        os.path.join(ROOT, 'Analytic-QNN-Reconstruction', 'Datasets'),
+    ]
+    for d in candidates:
+        if os.path.isdir(d):
+            return d
+    raise FileNotFoundError(
+        f"Cannot find Datasets folder. Searched:\n  "
+        + "\n  ".join(candidates)
+    )
+
+
+def load_reference_dataset(name: str, n_qubits: int):
+    """Load a dataset from the CSV files in the Datasets folder.
+
+    If n_qubits == 0 (auto mode), uses all features (n_qubit = n_feature).
+    Otherwise PCA is applied when features > n_qubits.
+    """
+    data_dir = _find_data_dir()
+    dataset_map = REFERENCE_DATASETS
 
     if name not in dataset_map:
         raise ValueError(f"Unknown reference dataset: {name}. "
@@ -71,14 +103,16 @@ def load_reference_dataset(name: str, n_qubits: int):
     X_test  = np.loadtxt(os.path.join(data_dir, f'X{test_tag}.csv'), delimiter=',')
     y_test  = np.loadtxt(os.path.join(data_dir, f'Y{test_tag}.csv'), delimiter=',')
 
-    # Reduce features with PCA if needed
-    if X_train.shape[1] > n_qubits:
+    # n_qubits == 0 means auto: n_qubit = n_feature (reference behaviour)
+    if n_qubits > 0 and X_train.shape[1] > n_qubits:
         from sklearn.decomposition import PCA
         pca = PCA(n_components=n_qubits)
         X_train = pca.fit_transform(X_train)
         X_test  = pca.transform(X_test)
         print(f"  PCA: {X_train.shape[1]+n_qubits} -> {n_qubits} features "
               f"(explained variance {pca.explained_variance_ratio_.sum():.2%})")
+    else:
+        print(f"  Using all {X_train.shape[1]} features (n_qubit = n_feature)")
 
     # Ensure binary labels 0/1
     unique_labels = np.unique(y_train)
@@ -314,20 +348,27 @@ def main():
     )
     # Data
     parser.add_argument('--dataset', type=str, default='moons',
-                        help='Dataset name (moons, iris, circles, breast_cancer, '
-                             'two-curves, linearly-separable, bars-and-stripes, '
-                             'mnist_0_1_7x7, mnist_3_5_7x7, mnist_pca_10d)')
+                        help='Dataset name. sklearn: moons, iris, circles, '
+                             'breast_cancer. CSV: two-curves, linearly-separable, '
+                             'bars-and-stripes, mnist_0_1_7x7, mnist_0_1_14x14, '
+                             'mnist_0_1_28x28, mnist_3_5_7x7, mnist_3_5_14x14, '
+                             'mnist_3_5_28x28, mnist_pca_10d. '
+                             'Use "all" to run every CSV dataset.')
     parser.add_argument('--n_samples', type=int, default=200,
                         help='Number of samples for synthetic datasets')
-    parser.add_argument('--n_qubits', type=int, default=4,
-                        help='Number of qubits')
+    parser.add_argument('--n_qubits', type=int, default=0,
+                        help='Number of qubits (0 = auto: n_qubit = n_feature)')
 
     # ARC settings
-    parser.add_argument('--arc_max_gates', type=int, default=30,
+    parser.add_argument('--arc_max_gates', type=int, default=15,
                         help='Maximum gates for ARC construction')
     parser.add_argument('--arc_gate_list', type=str, nargs='+',
                         default=['U1', 'U2', 'U3', 'H', 'X', 'Z'],
                         help='Gate types for ARC')
+    parser.add_argument('--arc_subsample', type=int, default=100,
+                        help='Max training samples per ARC gate iteration (0=all, default 100)')
+    parser.add_argument('--n_jobs', type=int, default=-1,
+                        help='Parallel jobs for joblib (-1 = all cores, 1 = sequential)')
 
     # Fixed ansatz settings
     parser.add_argument('--fixed_layers', type=int, default=3,
@@ -341,10 +382,14 @@ def main():
                         help='Methods to compare: arc, cobyla, spsa, nelder-mead, powell')
 
     # IBM hardware
-    parser.add_argument('--ibm_backend', type=str, default=None,
-                        help='IBM backend for hardware execution (e.g. ibm_brisbane)')
     parser.add_argument('--ibm_token', type=str, default=None,
-                        help='IBM Quantum API token')
+                        help='IBM Quantum API token. When provided the trained '
+                             'circuits are also evaluated on real IBM hardware.')
+    parser.add_argument('--ibm_backend', type=str, default='auto',
+                        help='IBM backend name, or "auto" to pick the least-busy '
+                             'backend automatically (default: auto)')
+    parser.add_argument('--ibm_channel', type=str, default='ibm_cloud',
+                        help='IBM channel: ibm_cloud or ibm_quantum_platform')
     parser.add_argument('--shots', type=int, default=4096,
                         help='Shots for hardware execution')
 
@@ -358,25 +403,74 @@ def main():
 
     # General
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--output_dir', type=str, default='results')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Output directory (default: results/<dataset>)')
     parser.add_argument('--quiet', action='store_true')
 
     args = parser.parse_args()
     np.random.seed(args.seed)
+
+    # Auto-set output_dir from dataset name if not specified
+    if args.output_dir is None:
+        args.output_dir = os.path.join('results', args.dataset)
     os.makedirs(args.output_dir, exist_ok=True)
 
     verbose = not args.quiet
 
+    # ---- Handle "all" datasets -----------------------------------------------
+    if args.dataset == 'all':
+        print(f"\n{'='*60}")
+        print("BATCH RUN: all CSV datasets")
+        print(f"{'='*60}")
+        # sensible qubit defaults per dataset
+        qubit_map = {
+            'two-curves': 4, 'linearly-separable': 4,
+            'bars-and-stripes': 4,
+            'mnist_0_1_7x7': 4, 'mnist_0_1_14x14': 4, 'mnist_0_1_28x28': 4,
+            'mnist_3_5_7x7': 4, 'mnist_3_5_14x14': 4, 'mnist_3_5_28x28': 4,
+            'mnist_pca_10d': 4,
+        }
+        summary = {}
+        for ds_name in REFERENCE_DATASETS:
+            nq = args.n_qubits if args.n_qubits != 4 else qubit_map.get(ds_name, 4)
+            out_dir = os.path.join(args.output_dir, ds_name)
+            cmd_args = [
+                sys.executable, __file__,
+                '--dataset', ds_name,
+                '--n_qubits', str(nq),
+                '--arc_max_gates', str(args.arc_max_gates),
+                '--fixed_layers', str(args.fixed_layers),
+                '--fixed_max_iter', str(args.fixed_max_iter),
+                '--methods', *args.methods,
+                '--seed', str(args.seed),
+                '--output_dir', out_dir,
+                '--n_samples', str(args.n_samples),
+            ]
+            if args.ibm_token:
+                cmd_args += ['--ibm_token', args.ibm_token]
+            if args.quiet:
+                cmd_args.append('--quiet')
+            print(f"\n>>> Running: {ds_name} (n_qubits={nq}) ...")
+            import subprocess
+            ret = subprocess.run(cmd_args)
+            status = 'OK' if ret.returncode == 0 else f'FAIL (code {ret.returncode})'
+            summary[ds_name] = status
+            print(f"    {ds_name}: {status}")
+
+        # print summary
+        print(f"\n{'='*60}")
+        print("BATCH SUMMARY")
+        print(f"{'='*60}")
+        for ds_name, status in summary.items():
+            print(f"  {ds_name:30s} {status}")
+        return
+
     # ---- Load data -----------------------------------------------------------
     print(f"\n{'='*60}")
-    print(f"Dataset: {args.dataset}  |  Qubits: {args.n_qubits}")
+    print(f"Dataset: {args.dataset}  |  Qubits: {args.n_qubits if args.n_qubits > 0 else 'auto (n_feature)'}")
     print(f"{'='*60}")
 
-    ref_datasets = [
-        'two-curves', 'linearly-separable', 'bars-and-stripes',
-        'mnist_0_1_7x7', 'mnist_0_1_14x14', 'mnist_3_5_7x7',
-        'mnist_3_5_14x14', 'mnist_pca_10d'
-    ]
+    ref_datasets = list(REFERENCE_DATASETS.keys())
     sklearn_datasets = ['moons', 'iris', 'circles', 'breast_cancer']
 
     if args.dataset in ref_datasets:
@@ -385,12 +479,17 @@ def main():
         )
     elif args.dataset in sklearn_datasets:
         X_train, X_test, y_train, y_test = load_sklearn_dataset(
-            args.dataset, args.n_qubits, args.n_samples
+            args.dataset, args.n_qubits if args.n_qubits > 0 else 4, args.n_samples
         )
     else:
         print(f"Unknown dataset: {args.dataset}")
         print(f"Available: {ref_datasets + sklearn_datasets}")
         sys.exit(1)
+
+    # Auto-set n_qubits from actual feature count (n_qubit = n_feature)
+    if args.n_qubits == 0:
+        args.n_qubits = X_train.shape[1]
+        print(f"  Auto n_qubits = {args.n_qubits} (n_qubit = n_feature)")
 
     print(f"  Train: {X_train.shape}  Test: {X_test.shape}")
     print(f"  Labels: {dict(zip(*np.unique(y_train, return_counts=True)))}")
@@ -405,7 +504,9 @@ def main():
         fixed_layers=args.fixed_layers,
         fixed_max_iter=args.fixed_max_iter,
         seed=args.seed,
-        verbose=verbose
+        verbose=verbose,
+        arc_subsample_size=args.arc_subsample,
+        n_jobs=args.n_jobs
     )
 
     results = pipeline.run_comparison(
@@ -415,9 +516,12 @@ def main():
     )
 
     # ---- IBM hardware (optional) ---------------------------------------------
-    if args.ibm_backend:
+    # Token: CLI arg > IBM_TOKEN env var
+    # ibm_token = args.ibm_token or os.environ.get('IBM_TOKEN')
+    ibm_token = args.ibm_token
+    if ibm_token:
         print(f"\n{'='*60}")
-        print(f"Running on IBM backend: {args.ibm_backend}")
+        print(f"Running on IBM hardware (backend={args.ibm_backend})")
         print(f"{'='*60}")
         from sklearn.preprocessing import MinMaxScaler
         scaler = MinMaxScaler(feature_range=(0, np.pi), clip=True)
@@ -428,7 +532,8 @@ def main():
             results, X_test_scaled, y_test,
             backend_name=args.ibm_backend,
             shots=args.shots,
-            ibm_token=args.ibm_token
+            ibm_token=ibm_token,
+            channel=args.ibm_channel
         )
 
     # ---- Barren-plateau analysis (optional) ----------------------------------
@@ -466,6 +571,31 @@ def main():
     # Save JSON
     json_path = os.path.join(args.output_dir, 'comparison_results.json')
     pipeline.save_results(results, json_path)
+
+    # ---- Print circuits ------------------------------------------------------
+    import sys, io
+    # Force UTF-8 stdout so Unicode box-drawing chars render on Windows
+    utf8_out = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8',
+                                errors='replace', line_buffering=True)
+    try:
+        utf8_out.write(f"\n{'='*60}\n")
+        utf8_out.write("QUANTUM CIRCUITS\n")
+        utf8_out.write(f"{'='*60}\n")
+        for method_name, method_result in results['methods'].items():
+            circ = method_result.get('circuit')
+            if circ is not None:
+                utf8_out.write(f"\n--- {method_name} (depth={circ.depth()}, "
+                               f"gates={circ.size()}) ---\n\n")
+                utf8_out.write(str(circ.draw(output='text', fold=120)) + "\n")
+                # Also save circuit diagram to file
+                circ_path = os.path.join(args.output_dir,
+                                         f'circuit_{method_name}.txt')
+                with open(circ_path, 'w', encoding='utf-8') as cf:
+                    cf.write(str(circ.draw(output='text', fold=120)))
+                utf8_out.write(f"  (saved to {circ_path})\n")
+        utf8_out.flush()
+    finally:
+        utf8_out.detach()  # prevent closing underlying stdout
 
     print(f"\nAll results saved to: {args.output_dir}/")
     print("Done!")
