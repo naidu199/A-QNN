@@ -1,0 +1,130 @@
+{
+  "dataset_info": {
+    "n_train": 40,
+    "n_test": 10,
+    "n_features": 2,
+    "n_qubits": 2,
+    "class_distribution_train": {
+      "0": 20,
+      "1": 20
+    }
+  },
+  "methods": {
+    "ARC_QNN": {
+      "method": "ARC_QNN",
+      "training_time": 25.621201276779175,
+      "train_metrics": {
+        "accuracy": 0.775,
+        "balanced_accuracy": 0.775,
+        "f1_score": 0.7748592870544091,
+        "precision": 0.7756892230576441,
+        "recall": 0.775,
+        "acc_class_0": 0.8,
+        "acc_class_1": 0.75,
+        "log_loss": 0.4204579946758087,
+        "auc_roc": 0.885,
+        "confusion_matrix": [
+          [
+            16,
+            4
+          ],
+          [
+            5,
+            15
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7,
+        "balanced_accuracy": 0.7,
+        "f1_score": 0.6703296703296703,
+        "precision": 0.8125,
+        "recall": 0.7,
+        "acc_class_0": 1.0,
+        "acc_class_1": 0.4,
+        "log_loss": 0.4126290404711262,
+        "auc_roc": 0.92,
+        "confusion_matrix": [
+          [
+            5,
+            0
+          ],
+          [
+            3,
+            2
+          ]
+        ]
+      },
+      "cost_history": [
+        0.3843720315326902,
+        0.3736712287292837
+      ],
+      "n_gates": 2,
+      "circuit_depth": 2,
+      "n_parameters": 2,
+      "total_measurements": 5882
+    },
+    "Fixed_QNN_COBYLA": {
+      "method": "Fixed_QNN_COBYLA",
+      "training_time": 0.6105213165283203,
+      "train_metrics": {
+        "accuracy": 0.6,
+        "balanced_accuracy": 0.6,
+        "f1_score": 0.5238095238095238,
+        "precision": 0.7777777777777778,
+        "recall": 0.6,
+        "acc_class_0": 1.0,
+        "acc_class_1": 0.2,
+        "log_loss": 1.2730151981798006,
+        "auc_roc": 0.8274999999999999,
+        "confusion_matrix": [
+          [
+            20,
+            0
+          ],
+          [
+            16,
+            4
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "f1_score": 0.3333333333333333,
+        "precision": 0.25,
+        "recall": 0.5,
+        "acc_class_0": 1.0,
+        "acc_class_1": 0.0,
+        "log_loss": 1.0327744807516546,
+        "auc_roc": 0.9600000000000001,
+        "confusion_matrix": [
+          [
+            5,
+            0
+          ],
+          [
+            5,
+            0
+          ]
+        ]
+      },
+      "cost_history": [
+        2.0849354762604806,
+        1.774167016757928,
+        1.6433596317929031,
+        1.6433596317929031,
+        1.6433596317929031,
+        1.590619929392664,
+        1.5329206133835924,
+        1.4949125991566452,
+        1.4864239568444062,
+        1.2730151981798006
+      ],
+      "n_gates": 5,
+      "circuit_depth": 5,
+      "n_parameters": 4,
+      "total_measurements": 450
+    }
+  }
+}

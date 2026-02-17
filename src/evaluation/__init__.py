@@ -14,6 +14,8 @@ from .visualization import (
     plot_decision_boundary,
     plot_barren_plateau_analysis
 )
+from .ibm_runner import IBMQuantumRunner
+from .comparison import QNNComparisonPipeline
 
 __all__ = [
     "compute_metrics",
@@ -23,5 +25,7 @@ __all__ = [
     "plot_training_history",
     "plot_circuit",
     "plot_decision_boundary",
-    "plot_barren_plateau_analysis"
+    "plot_barren_plateau_analysis",
+    "IBMQuantumRunner",
+    "QNNComparisonPipeline",
 ]

@@ -20,6 +20,17 @@ __version__ = "1.0.0"
 __author__ = "A-QNN Research Team"
 
 from .models.adaptive_qnn import AdaptiveQNN
+from .models.fixed_ansatz_qnn import FixedAnsatzQNN
 from .training.trainer import QNNTrainer
+from .estimators.arc_estimator import ARCEstimator
+from .evaluation.ibm_runner import IBMQuantumRunner
+from .evaluation.comparison import QNNComparisonPipeline
 
-__all__ = ["AdaptiveQNN", "QNNTrainer"]
+__all__ = [
+    "AdaptiveQNN",
+    "FixedAnsatzQNN",
+    "QNNTrainer",
+    "ARCEstimator",
+    "IBMQuantumRunner",
+    "QNNComparisonPipeline",
+]
