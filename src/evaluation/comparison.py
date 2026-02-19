@@ -255,7 +255,8 @@ class QNNComparisonPipeline:
             n_layers=self.fixed_layers,
             optimizer=optimizer,
             max_iter=self.fixed_max_iter,
-            verbose=self.verbose
+            verbose=self.verbose,
+            subsample_size=self.arc_subsample_size * 2  # slightly more for stable gradients
         )
 
         t0 = time.time()

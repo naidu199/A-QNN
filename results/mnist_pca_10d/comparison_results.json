@@ -1,0 +1,69 @@
+{
+  "dataset_info": {
+    "n_train": 11552,
+    "n_test": 1902,
+    "n_features": 11,
+    "n_qubits": 11,
+    "class_distribution_train": {
+      "0": 6131,
+      "1": 5421
+    }
+  },
+  "methods": {
+    "ARC_QNN": {
+      "method": "ARC_QNN",
+      "training_time": 18.178325414657593,
+      "train_metrics": {
+        "accuracy": 0.8021987534626038,
+        "balanced_accuracy": 0.8021483444337463,
+        "f1_score": 0.8023114620227336,
+        "precision": 0.8026305732206007,
+        "recall": 0.8021987534626038,
+        "acc_class_0": 0.8029685206328494,
+        "acc_class_1": 0.801328168234643,
+        "log_loss": 0.48098345567414796,
+        "auc_roc": 0.8800824740506203,
+        "confusion_matrix": [
+          [
+            4923,
+            1208
+          ],
+          [
+            1077,
+            4344
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7886435331230284,
+        "balanced_accuracy": 0.790708386982196,
+        "f1_score": 0.7887978120113629,
+        "precision": 0.7923318529872655,
+        "recall": 0.7886435331230284,
+        "acc_class_0": 0.7574257425742574,
+        "acc_class_1": 0.8239910313901345,
+        "log_loss": 0.4798237028686426,
+        "auc_roc": 0.8854781778626294,
+        "confusion_matrix": [
+          [
+            765,
+            245
+          ],
+          [
+            157,
+            735
+          ]
+        ]
+      },
+      "cost_history": [
+        0.6615105073795915,
+        0.48781990836981687,
+        0.5012731462886255
+      ],
+      "n_gates": 3,
+      "circuit_depth": 3,
+      "n_parameters": 3,
+      "total_measurements": 53252
+    }
+  }
+}

@@ -45,7 +45,8 @@ class FixedAnsatzQNN:
         optimizer: str = 'cobyla',
         max_iter: int = 200,
         shots: int = 1024,
-        verbose: bool = True
+        verbose: bool = True,
+        subsample_size: int = 200
     ):
         """
         Args:
@@ -56,6 +57,7 @@ class FixedAnsatzQNN:
             max_iter: Maximum optimizer iterations
             shots: Number of measurement shots
             verbose: Print progress
+            subsample_size: Max training samples per cost evaluation (0=all)
         """
         self.n_qubits = n_qubits
         self.n_layers = n_layers
@@ -64,6 +66,7 @@ class FixedAnsatzQNN:
         self.max_iter = max_iter
         self.shots = shots
         self.verbose = verbose
+        self.subsample_size = subsample_size
 
         # Build circuit
         self.data_params = None
@@ -178,13 +181,20 @@ class FixedAnsatzQNN:
         Returns:
             Log-loss cost
         """
+        # Subsample for speed on large datasets
+        if self.subsample_size > 0 and len(X) > self.subsample_size:
+            idx = np.random.choice(len(X), self.subsample_size, replace=False)
+            X_eval, y_eval = X[idx], y[idx]
+        else:
+            X_eval, y_eval = X, y
+
         probs = []
-        for xi in X:
+        for xi in X_eval:
             p = self._evaluate_expectation(self.circuit, xi, var_values)
             probs.append(p)
 
         probs = np.clip(probs, 1e-15, 1 - 1e-15)
-        cost = log_loss(y, probs)
+        cost = log_loss(y_eval, probs)
 
         self.cost_history.append(cost)
         if self.verbose and len(self.cost_history) % 10 == 0:

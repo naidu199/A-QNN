@@ -168,6 +168,20 @@ def build_gate_circuit(
     return circuit
 
 
+def _compute_abc_for_sample(base_circ_bound, test_gates_3, n_qubits):
+    """Worker for parallel per-sample ABC computation (module-level for pickle)."""
+    qubits = list(range(n_qubits))
+    expect = [0.0, 0.0, 0.0]
+    for kt in range(3):
+        tc = base_circ_bound.copy()
+        tc.compose(test_gates_3[kt], qubits=qubits, inplace=True)
+        rem = {p: 0.0 for p in tc.parameters}
+        if rem:
+            tc = tc.assign_parameters(rem)
+        expect[kt] = Statevector(tc).probabilities()[0]
+    return determine_sine_curve(expect[0], expect[1], expect[2])
+
+
 class ARCEstimator:
     """
     Analytic Iterative Circuit Reconstruction Estimator.
@@ -301,147 +315,71 @@ class ARCEstimator:
 
     def _evaluate_gate_candidate(
         self,
-        base_circuit: QuantumCircuit,
-        gate_idx: int,
+        gate_desc: np.ndarray,
+        test_gates_3: List[QuantumCircuit],
+        base_circuits_bound: Optional[List[QuantumCircuit]],
         X: np.ndarray,
         y: np.ndarray,
-        params: ParameterVector,
-        count: int
+        n_features: int,
+        count: int,
+        n_samples: int
     ) -> Tuple[List[float], List[float]]:
         """
-        Evaluate a candidate gate across all features using the 3-point
-        sinusoidal reconstruction.
+        Evaluate a candidate gate across all features.
 
-        For each data point, we evaluate the circuit+gate at θ=0, π/2, −π/2
-        to get a, b, c of the sinusoidal cost landscape. Then we search
-        for the optimal θ across a classical grid.
+        KEY OPTIMIZATION (matching reference impl):
+        ABC values are feature-independent because the test gate parameter
+        is always set to 1.0. We compute ABC once per sample, then search
+        over features only in the fast numpy-based theta optimization.
+        This is exactly how the reference layerParallel + find_cost_rec_QNN work.
 
         Args:
-            base_circuit: Current circuit before adding gate
-            gate_idx: Index into gate pool
+            gate_desc: Gate descriptor array
+            test_gates_3: Pre-built test gates for theta=0, pi/2, -pi/2 (fully bound)
+            base_circuits_bound: Pre-bound base circuits per sample (None for count=0)
             X: Training data
             y: Training labels
-            params: Parameter vector
+            n_features: Number of features (incl. bias)
             count: Current gate count (0 = first gate)
+            n_samples: Number of training samples
 
         Returns:
             (optimal_thetas, optimal_costs) for each feature
         """
-        gate_desc = self.gate_pool[gate_idx]
-        n_features = len(params)
-        n_samples = len(X)
+        AA = np.zeros(n_samples)
+        BB = np.zeros(n_samples)
+        CC = np.zeros(n_samples)
+        qubits = list(range(self.n_qubits))
 
-        theta_test = [0, np.pi * 0.5, -np.pi * 0.5]
+        if count == 0:
+            # Empty base circuit: ABC identical for all samples (only 3 sims)
+            expect = [0.0, 0.0, 0.0]
+            for kt in range(3):
+                sv = Statevector(test_gates_3[kt])
+                expect[kt] = sv.probabilities()[0]
+            a, b, c = determine_sine_curve(expect[0], expect[1], expect[2])
+            AA[:] = a
+            BB[:] = b
+            CC[:] = c
+        else:
+            # Data-dependent ABC per sample — parallel across samples
+            results = Parallel(n_jobs=self.n_jobs)(
+                delayed(_compute_abc_for_sample)(
+                    base_circuits_bound[i], test_gates_3, self.n_qubits
+                ) for i in range(n_samples)
+            )
+            for i, (a, b, c) in enumerate(results):
+                AA[i] = a
+                BB[i] = b
+                CC[i] = c
 
+        # Search optimal theta per feature (pure numpy, very fast)
         opt_thetas = []
         opt_costs = []
-
         for feat in range(n_features):
-            # For each data point, compute a, b, c of the sinusoidal fit
-            AA = np.zeros(n_samples)
-            BB = np.zeros(n_samples)
-            CC = np.zeros(n_samples)
-
-            if count == 0:
-                # First gate: no data dependence yet, same a,b,c for all
-                expect_test = [0, 0, 0]
-                for kt in range(3):
-                    # Build test circuit with test angle
-                    gate_desc_feat = gate_desc.copy()
-                    for q in range(self.n_qubits):
-                        if gate_desc_feat[q] != '111111':
-                            g, _ = str(gate_desc_feat[q]).split('_')
-                            gate_desc_feat[q] = f'{g}_{feat}'
-
-                    angle_list = [theta_test[kt]] * self.n_qubits
-                    test_gate = build_gate_circuit(
-                        gate_desc_feat, self.n_qubits, theta_test[kt],
-                        ParameterVector('t', n_features), feat
-                    )
-
-                    # Assign param[feat]=1 (test mode)
-                    test_params = {p: 1.0 for p in test_gate.parameters}
-                    if test_params:
-                        test_gate = test_gate.assign_parameters(test_params)
-
-                    test_circuit = base_circuit.copy()
-                    test_circuit.compose(test_gate, qubits=list(range(self.n_qubits)), inplace=True)
-
-                    # Remove remaining unbound params
-                    remaining = {p: 0.0 for p in test_circuit.parameters}
-                    if remaining:
-                        test_circuit = test_circuit.assign_parameters(remaining)
-
-                    sv = Statevector(test_circuit)
-                    expect_test[kt] = sv.probabilities()[0]
-                    self.total_measurements += 1
-
-                a, b, c = determine_sine_curve(expect_test[0], expect_test[1], expect_test[2])
-                AA[:] = a
-                BB[:] = b
-                CC[:] = c
-            else:
-                # Subsequent gates: data-dependent a,b,c per data point
-                # Pre-build the 3 test gates (shared across all samples)
-                test_gates_prebuilt = []
-                for kt in range(3):
-                    gate_desc_feat = gate_desc.copy()
-                    for q in range(self.n_qubits):
-                        if gate_desc_feat[q] != '111111':
-                            g, _ = str(gate_desc_feat[q]).split('_')
-                            gate_desc_feat[q] = f'{g}_{feat}'
-                    test_gate = build_gate_circuit(
-                        gate_desc_feat, self.n_qubits, theta_test[kt],
-                        ParameterVector('t', n_features), feat
-                    )
-                    test_params = {p: 1.0 for p in test_gate.parameters}
-                    if test_params:
-                        test_gate = test_gate.assign_parameters(test_params)
-                    test_gates_prebuilt.append(test_gate)
-
-                # Parallel per-sample ABC computation (like reference layerParallel)
-                def _compute_abc_sample(i):
-                    """Compute a, b, c for a single data point."""
-                    expect_test = [0.0, 0.0, 0.0]
-                    for kt in range(3):
-                        test_circuit = base_circuit.copy()
-                        # Bind existing data params
-                        existing_params = {}
-                        for p in test_circuit.parameters:
-                            for fi in range(n_features):
-                                if p.name == params[fi].name:
-                                    existing_params[p] = float(X[i][fi])
-                        remaining = {p: 0.0 for p in test_circuit.parameters if p not in existing_params}
-                        existing_params.update(remaining)
-                        if existing_params:
-                            test_circuit = test_circuit.assign_parameters(existing_params)
-
-                        test_circuit.compose(test_gates_prebuilt[kt], qubits=list(range(self.n_qubits)), inplace=True)
-
-                        final_params = {p: 0.0 for p in test_circuit.parameters}
-                        if final_params:
-                            test_circuit = test_circuit.assign_parameters(final_params)
-
-                        sv = Statevector(test_circuit)
-                        expect_test[kt] = sv.probabilities()[0]
-                    a, b, c = determine_sine_curve(expect_test[0], expect_test[1], expect_test[2])
-                    return i, a, b, c
-
-                results = Parallel(n_jobs=self.n_jobs)(
-                    delayed(_compute_abc_sample)(i) for i in range(n_samples)
-                )
-                for i, a, b, c in results:
-                    AA[i] = a
-                    BB[i] = b
-                    CC[i] = c
-                self.total_measurements += n_samples * 3
-
-            # Find optimal theta by grid search on the reconstructed cost
-            opt_theta, opt_cost = self._find_optimal_theta(
-                AA, BB, CC, X, y, feat
-            )
-            opt_thetas.append(opt_theta)
-            opt_costs.append(opt_cost)
+            t, cost = self._find_optimal_theta(AA, BB, CC, X, y, feat)
+            opt_thetas.append(t)
+            opt_costs.append(cost)
 
         return opt_thetas, opt_costs
 
@@ -488,8 +426,9 @@ class ARCEstimator:
         # Clip for numerical stability
         expect = np.clip(expect, 1e-15, 1 - 1e-15)
 
-        # Compute log-loss for each theta
-        costs = np.array([log_loss(y, expect[th]) for th in range(len(xs))])
+        # Vectorized binary cross-entropy (replaces 1001 sklearn.log_loss calls)
+        costs = -(y[None, :] * np.log(expect)
+                  + (1 - y[None, :]) * np.log(1 - expect)).mean(axis=1)
 
         opt_idx = np.argmin(costs)
         return xs[opt_idx], costs[opt_idx]
@@ -528,6 +467,13 @@ class ARCEstimator:
         self._params = params
         self._X_has_bias = True
         count = 0
+        n_pool = len(self.gate_pool)
+        qubits_list = list(range(self.n_qubits))
+        theta_test = [0, np.pi * 0.5, -np.pi * 0.5]
+
+        if self.verbose:
+            print(f"  Gate pool: {n_pool} candidates, "
+                  f"{n_features} features, n_jobs={self.n_jobs}")
 
         while count < self.max_gates:
             t0 = time.time()
@@ -538,6 +484,47 @@ class ARCEstimator:
                 X_sub, y_sub = X[idx], y[idx]
             else:
                 X_sub, y_sub = X, y
+            n_samp = len(X_sub)
+
+            # --- Pre-bind base circuits (REUSED by all gate candidates) ---
+            if count > 0:
+                param_name_map = {params[fi].name: fi for fi in range(n_features)}
+                base_circuits_bound = []
+                for i in range(n_samp):
+                    tc = self.circuit.copy()
+                    bind = {}
+                    for p in tc.parameters:
+                        fi = param_name_map.get(p.name)
+                        bind[p] = float(X_sub[i][fi]) if fi is not None else 0.0
+                    tc = tc.assign_parameters(bind)
+                    base_circuits_bound.append(tc)
+            else:
+                base_circuits_bound = None
+
+            # --- Pre-build test gates for ALL candidates ---
+            # ABC is feature-independent (test param=1.0), so feature=0 is used
+            # for building; the actual feature search happens in theta optimization.
+            all_test_gates = []
+            for mf in range(n_pool):
+                gate_desc = self.gate_pool[mf]
+                tg3 = []
+                for kt in range(3):
+                    gd = gate_desc.copy()
+                    for q in range(self.n_qubits):
+                        if gd[q] != '111111':
+                            g, _ = str(gd[q]).split('_')
+                            gd[q] = f'{g}_0'
+                    tg = build_gate_circuit(
+                        gd, self.n_qubits, theta_test[kt],
+                        ParameterVector('t', n_features), 0
+                    )
+                    tp = {p: 1.0 for p in tg.parameters}
+                    if tp:
+                        tg = tg.assign_parameters(tp)
+                    tg3.append(tg)
+                all_test_gates.append(tg3)
+
+            t_prep = time.time() - t0
 
             best_cost = np.inf
             best_gate_idx = -1
@@ -545,12 +532,14 @@ class ARCEstimator:
             best_theta = 0
             best_gate_desc = None
 
-            # Evaluate each candidate gate (like reference main loop)
-            for mf in range(len(self.gate_pool)):
+            # --- Evaluate gate candidates sequentially ---
+            # (per-sample parallelism inside _evaluate_gate_candidate for count>0)
+            for mf in range(n_pool):
                 opt_thetas, opt_costs = self._evaluate_gate_candidate(
-                    self.circuit, mf, X_sub, y_sub, params, count
+                    self.gate_pool[mf], all_test_gates[mf],
+                    base_circuits_bound, X_sub, y_sub,
+                    n_features, count, n_samp
                 )
-
                 for feat in range(n_features):
                     if opt_costs[feat] < best_cost:
                         best_cost = opt_costs[feat]
@@ -559,7 +548,13 @@ class ARCEstimator:
                         best_theta = opt_thetas[feat]
                         best_gate_desc = self.gate_pool[mf].copy()
 
-            # --- Add the best gate FIRST (like reference impl) ---
+            # Update measurement count
+            if count == 0:
+                self.total_measurements += n_pool * 3
+            else:
+                self.total_measurements += n_pool * n_samp * 3
+
+            # --- Add the best gate ---
             gate_desc_feat = best_gate_desc.copy()
             for q in range(self.n_qubits):
                 if gate_desc_feat[q] != '111111':
@@ -570,7 +565,7 @@ class ARCEstimator:
                 gate_desc_feat, self.n_qubits, best_theta,
                 params, best_feature
             )
-            self.circuit.compose(new_gate, qubits=list(range(self.n_qubits)), inplace=True)
+            self.circuit.compose(new_gate, qubits=qubits_list, inplace=True)
 
             self.gate_sequence.append({
                 'gate_descriptor': gate_desc_feat.tolist(),
@@ -584,11 +579,12 @@ class ARCEstimator:
             t1 = time.time()
             if self.verbose:
                 gate_name = best_gate_desc.tolist()
-                n_sub = len(X_sub)
                 print(f'Gate {count}: cost={best_cost:.6f}, '
                       f'theta={best_theta:.5f}, feat={best_feature}, '
                       f'gate={gate_name}, '
-                      f'samples={n_sub}, time={t1-t0:.1f}s', flush=True)
+                      f'samples={n_samp}, '
+                      f'prep={t_prep:.1f}s eval={t1-t0-t_prep:.1f}s '
+                      f'total={t1-t0:.1f}s', flush=True)
 
             # Convergence check (matches reference exactly)
             if count > 1 and len(self.cost_history) >= 2:

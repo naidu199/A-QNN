@@ -1,0 +1,24 @@
+
+================================================================================
+QNN COMPARISON REPORT
+Adaptive QNN (ARC) vs Fixed Ansatz QNN
+================================================================================
+
+Dataset: 11552 train, 1902 test, 11 features, 11 qubits
+
+--------------------------------------------------------------------------------
+Metric                    | ARC_QNN             
+--------------------------------------------------------------------------------
+Test Accuracy             | 0.7886              
+Test Balanced Acc         | 0.7907              
+Test F1 Score             | 0.7888              
+Test Log-Loss             | 0.4798              
+Train Accuracy            | 0.8022              
+Circuit Depth             | 3                   
+Num Parameters            | 3                   
+Num Gates                 | 3                   
+Training Time (s)         | 18.1783             
+Total Measurements        | 53252               
+--------------------------------------------------------------------------------
+
+Conclusion:
