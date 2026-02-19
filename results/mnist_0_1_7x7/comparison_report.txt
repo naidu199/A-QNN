@@ -9,18 +9,18 @@ Dataset: 1000 train, 1000 test, 10 features, 10 qubits
 --------------------------------------------------------------------------------
 Metric                    | ARC_QNN              | Fixed_QNN_COBYLA    
 --------------------------------------------------------------------------------
-Test Accuracy             | 0.9160               | 0.4480              
-Test Balanced Acc         | 0.9069               | 0.5000              
-Test F1 Score             | 0.9148               | 0.2772              
-Test Log-Loss             | 0.3298               | 3.2639              
-Train Accuracy            | 0.9630               | 0.4620              
-Circuit Depth             | 7                    | 26                  
-Num Parameters            | 7                    | 40                  
-Num Gates                 | 7                    | 26                  
-Training Time (s)         | 48.5700              | 30.3481             
-Total Measurements        | 110180               | 12000               
+Test Accuracy             | 0.9290               | 0.4480              
+Test Balanced Acc         | 0.9214               | 0.5000              
+Test F1 Score             | 0.9282               | 0.2772              
+Test Log-Loss             | 0.1723               | 3.1172              
+Train Accuracy            | 0.9600               | 0.4620              
+Circuit Depth             | 14                   | 38                  
+Num Parameters            | 14                   | 60                  
+Num Gates                 | 14                   | 38                  
+Training Time (s)         | 294.4489             | 101.9270            
+Total Measurements        | 254180               | 22000               
 --------------------------------------------------------------------------------
 
 Conclusion:
-  Best test accuracy: ARC_QNN (0.9160)
-  ARC vs Fixed_QNN_COBYLA: +0.4680 accuracy difference
+  Best test accuracy: ARC_QNN (0.9290)
+  ARC vs Fixed_QNN_COBYLA: +0.4810 accuracy difference

@@ -47,7 +47,8 @@ class QNNComparisonPipeline:
         seed: int = 42,
         verbose: bool = True,
         arc_subsample_size: int = 100,
-        n_jobs: int = -1
+        n_jobs: int = -1,
+        patience: int = 1
     ):
         """
         Args:
@@ -61,6 +62,7 @@ class QNNComparisonPipeline:
             verbose: Print progress
             arc_subsample_size: Training samples per gate iteration (reference uses 100)
             n_jobs: Number of parallel jobs for joblib (-1 = all cores)
+            patience: Consecutive non-improving gates before stopping ARC
         """
         self.n_qubits = n_qubits
         self.arc_gate_list = arc_gate_list or ['U1', 'U2', 'U3', 'H', 'X', 'Z']
@@ -72,6 +74,7 @@ class QNNComparisonPipeline:
         self.verbose = verbose
         self.arc_subsample_size = arc_subsample_size
         self.n_jobs = n_jobs
+        self.patience = patience
 
         np.random.seed(seed)
 
@@ -175,7 +178,8 @@ class QNNComparisonPipeline:
             max_gates=self.arc_max_gates,
             verbose=self.verbose,
             subsample_size=self.arc_subsample_size,
-            n_jobs=self.n_jobs
+            n_jobs=self.n_jobs,
+            patience=self.patience
         )
 
         t0 = time.time()

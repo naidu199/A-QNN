@@ -134,6 +134,9 @@ def build_gate_circuit(
             param_val = params[int(feat_id)] if int(feat_id) < len(params) else 1.0
 
         # Apply gate based on type
+        # Matches reference circ_convertSinge exactly:
+        # U1=Rz, U2=Rx, U3=Ry, H=just H (no Rz), two-qubit gates use Rz after
+        # Python negative indexing for wrap-around (j-1 at j=0 → last qubit)
         if gate_type == 'U1':
             circuit.rz(angle * param_val, qreg[j])
         elif gate_type == 'U2':
@@ -141,7 +144,7 @@ def build_gate_circuit(
         elif gate_type == 'U3':
             circuit.ry(angle * param_val, qreg[j])
         elif gate_type == 'H':
-            circuit.h(qreg[j])  # reference: H gate has no rz after it
+            circuit.h(qreg[j])  # reference circ_convertSinge: H has no Rz
         elif gate_type == 'Rz':
             circuit.rz(angle, qreg[j])
         elif gate_type == 'Rx':
@@ -150,20 +153,20 @@ def build_gate_circuit(
             circuit.ry(angle, qreg[j])
         elif gate_type == 'P':
             circuit.p(angle * param_val, qreg[j])
-        elif gate_type == 'X' and j >= 1:
+        elif gate_type == 'CP':
+            circuit.cp(angle * param_val, qreg[j-1], qreg[j])
+        elif gate_type == 'X':
             circuit.cx(qreg[j-1], qreg[j])
             circuit.rz(angle * param_val, qreg[j])
-        elif gate_type == 'Xn' and j >= 2:
+        elif gate_type == 'Xn':
             circuit.cx(qreg[j-2], qreg[j])
             circuit.rz(angle * param_val, qreg[j])
-        elif gate_type == 'Z' and j >= 1:
+        elif gate_type == 'Z':
             circuit.cz(qreg[j-1], qreg[j])
             circuit.rz(angle * param_val, qreg[j])
-        elif gate_type == 'Zn' and j >= 2:
+        elif gate_type == 'Zn':
             circuit.cz(qreg[j-2], qreg[j])
             circuit.rz(angle * param_val, qreg[j])
-        elif gate_type == 'CP' and j >= 1:
-            circuit.cp(angle * param_val, qreg[j-1], qreg[j])
 
     return circuit
 
@@ -211,7 +214,8 @@ class ARCEstimator:
         max_gates: int = 150,
         verbose: bool = True,
         subsample_size: int = 100,
-        n_jobs: int = -1
+        n_jobs: int = -1,
+        patience: int = 1
     ):
         """
         Args:
@@ -223,6 +227,9 @@ class ARCEstimator:
             verbose: Print progress
             subsample_size: Training samples per gate iteration (reference uses 100)
             n_jobs: Number of parallel jobs for joblib (-1 = all cores)
+            patience: Number of consecutive non-improving gates to tolerate before stopping
+                      (1 = stop after 1 non-improving gate (original behavior),
+                       2 = allow 1 extra chance, etc.)
         """
         self.n_qubits = n_qubits
         self.gate_list = gate_list or ['U1', 'U2', 'U3', 'H', 'X', 'Z']
@@ -232,6 +239,7 @@ class ARCEstimator:
         self.verbose = verbose
         self.subsample_size = subsample_size
         self.n_jobs = n_jobs
+        self.patience = patience
 
         # Build gate pool
         self.gate_pool = ARCGatePool(self.gate_list, n_qubits)
@@ -243,7 +251,7 @@ class ARCEstimator:
         self.total_measurements = 0
 
     def _initialize_circuit(self) -> QuantumCircuit:
-        """Create empty circuit (matching reference: no initial encoding)."""
+        """Create empty initial circuit (matching reference: initializeMainCirc)."""
         qreg = QuantumRegister(self.n_qubits, 'qc')
         return QuantumCircuit(qreg)
 
@@ -467,6 +475,12 @@ class ARCEstimator:
         self._params = params
         self._X_has_bias = True
         count = 0
+        no_improve_count = 0
+        best_overall_cost = np.inf
+        best_overall_gate_count = 0
+        best_overall_circuit = None
+        best_overall_gate_sequence = []
+        best_overall_cost_history = []
         n_pool = len(self.gate_pool)
         qubits_list = list(range(self.n_qubits))
         theta_test = [0, np.pi * 0.5, -np.pi * 0.5]
@@ -586,12 +600,41 @@ class ARCEstimator:
                       f'prep={t_prep:.1f}s eval={t1-t0-t_prep:.1f}s '
                       f'total={t1-t0:.1f}s', flush=True)
 
-            # Convergence check (matches reference exactly)
+            # Convergence check with patience
             if count > 1 and len(self.cost_history) >= 2:
                 if self.cost_history[-2] - self.cost_history[-1] < self.convergence_threshold:
-                    if self.verbose:
-                        print(f'Converged at gate {count}')
-                    break
+                    no_improve_count = no_improve_count + 1
+                    if no_improve_count >= self.patience:
+                        if self.verbose:
+                            print(f'Converged at gate {count} (patience={self.patience})')
+                        # Revert to best circuit if we overshot
+                        if best_overall_gate_count < count:
+                            self.circuit = best_overall_circuit
+                            self.gate_sequence = best_overall_gate_sequence
+                            self.cost_history = best_overall_cost_history
+                            if self.verbose:
+                                print(f'  Reverted to best circuit at gate {best_overall_gate_count} '
+                                      f'(cost={best_overall_cost:.6f})')
+                        break
+                else:
+                    no_improve_count = 0
+
+            # Track best circuit seen so far
+            if best_cost < best_overall_cost:
+                best_overall_cost = best_cost
+                best_overall_gate_count = count
+                best_overall_circuit = self.circuit.copy()
+                best_overall_gate_sequence = list(self.gate_sequence)
+                best_overall_cost_history = list(self.cost_history)
+
+        # Final: ensure we return the best circuit found
+        if best_overall_gate_count < count:
+            self.circuit = best_overall_circuit
+            self.gate_sequence = best_overall_gate_sequence
+            self.cost_history = best_overall_cost_history
+            if self.verbose:
+                print(f'Using best circuit from gate {best_overall_gate_count} '
+                      f'(cost={best_overall_cost:.6f})')
 
         return self.circuit, self.gate_sequence, self.cost_history
 

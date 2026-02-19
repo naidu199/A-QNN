@@ -9,18 +9,18 @@ Dataset: 1000 train, 1000 test, 4 features, 4 qubits
 --------------------------------------------------------------------------------
 Metric                    | ARC_QNN              | Fixed_QNN_COBYLA    
 --------------------------------------------------------------------------------
-Test Accuracy             | 0.5750               | 0.5110              
-Test Balanced Acc         | 0.5787               | 0.5058              
-Test F1 Score             | 0.5438               | 0.4340              
-Test Log-Loss             | 0.6932               | 0.6983              
-Train Accuracy            | 0.6010               | 0.5280              
+Test Accuracy             | 0.5750               | 0.5070              
+Test Balanced Acc         | 0.5787               | 0.5000              
+Test F1 Score             | 0.5438               | 0.3411              
+Test Log-Loss             | 0.6932               | 1.2084              
+Train Accuracy            | 0.6010               | 0.4930              
 Circuit Depth             | 5                    | 20                  
 Num Parameters            | 5                    | 24                  
 Num Gates                 | 5                    | 20                  
-Training Time (s)         | 313.7689             | 137.6367            
-Total Measurements        | 146360               | 102000              
+Training Time (s)         | 12.9269              | 24.1159             
+Total Measurements        | 30872                | 22000               
 --------------------------------------------------------------------------------
 
 Conclusion:
   Best test accuracy: ARC_QNN (0.5750)
-  ARC vs Fixed_QNN_COBYLA: +0.0640 accuracy difference
+  ARC vs Fixed_QNN_COBYLA: +0.0680 accuracy difference

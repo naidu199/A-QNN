@@ -87,7 +87,7 @@ def _find_data_dir():
 def load_reference_dataset(name: str, n_qubits: int):
     """Load a dataset from the CSV files in the Datasets folder.
 
-    If n_qubits == 0 (auto mode), uses all features (n_qubit = n_feature).
+    If n_qubits == 0 (auto mode), returns all features (PCA capping handled by caller).
     Otherwise PCA is applied when features > n_qubits.
     """
     data_dir = _find_data_dir()
@@ -357,7 +357,9 @@ def main():
     parser.add_argument('--n_samples', type=int, default=200,
                         help='Number of samples for synthetic datasets')
     parser.add_argument('--n_qubits', type=int, default=0,
-                        help='Number of qubits (0 = auto: n_qubit = n_feature)')
+                        help='Number of qubits (0 = auto: uses n_feature, capped at --max_qubits)')
+    parser.add_argument('--max_qubits', type=int, default=20,
+                        help='Maximum qubits in auto mode (PCA applied if features exceed this)')
 
     # ARC settings
     parser.add_argument('--arc_max_gates', type=int, default=15,
@@ -369,6 +371,9 @@ def main():
                         help='Max training samples per ARC gate iteration (0=all, default 100)')
     parser.add_argument('--n_jobs', type=int, default=-1,
                         help='Parallel jobs for joblib (-1 = all cores, 1 = sequential)')
+    parser.add_argument('--patience', type=int, default=1,
+                        help='Number of consecutive non-improving gates before stopping ARC '
+                             '(1=original, 2=allow 1 extra chance, etc.)')
 
     # Fixed ansatz settings
     parser.add_argument('--fixed_layers', type=int, default=3,
@@ -467,7 +472,7 @@ def main():
 
     # ---- Load data -----------------------------------------------------------
     print(f"\n{'='*60}")
-    print(f"Dataset: {args.dataset}  |  Qubits: {args.n_qubits if args.n_qubits > 0 else 'auto (n_feature)'}")
+    print(f"Dataset: {args.dataset}  |  Qubits: {args.n_qubits if args.n_qubits > 0 else f'auto (max {args.max_qubits})'}")
     print(f"{'='*60}")
 
     ref_datasets = list(REFERENCE_DATASETS.keys())
@@ -486,10 +491,21 @@ def main():
         print(f"Available: {ref_datasets + sklearn_datasets}")
         sys.exit(1)
 
-    # Auto-set n_qubits from actual feature count (n_qubit = n_feature)
+    # Auto-set n_qubits from actual feature count, capped at max_qubits
     if args.n_qubits == 0:
-        args.n_qubits = X_train.shape[1]
-        print(f"  Auto n_qubits = {args.n_qubits} (n_qubit = n_feature)")
+        n_feat = X_train.shape[1]
+        if n_feat <= args.max_qubits:
+            args.n_qubits = n_feat
+            print(f"  Auto n_qubits = {args.n_qubits} (n_qubit = n_feature)")
+        else:
+            args.n_qubits = args.max_qubits
+            print(f"  Auto n_qubits = {args.n_qubits} (capped from {n_feat} features, applying PCA)")
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=args.n_qubits)
+            X_train = pca.fit_transform(X_train)
+            X_test = pca.transform(X_test)
+            print(f"  PCA: {n_feat} -> {args.n_qubits} features "
+                  f"(explained variance {pca.explained_variance_ratio_.sum():.2%})")
 
     print(f"  Train: {X_train.shape}  Test: {X_test.shape}")
     print(f"  Labels: {dict(zip(*np.unique(y_train, return_counts=True)))}")
@@ -506,7 +522,8 @@ def main():
         seed=args.seed,
         verbose=verbose,
         arc_subsample_size=args.arc_subsample,
-        n_jobs=args.n_jobs
+        n_jobs=args.n_jobs,
+        patience=args.patience
     )
 
     results = pipeline.run_comparison(
