@@ -1,0 +1,134 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" version="29.5.0">
+  <diagram id="Xvy_iXTL71xQS2omsHN4" name="Page-1">
+    <mxGraphModel dx="2329" dy="905" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontStyle=1;" value="&amp;nbsp;ARC Training Loop: Gate Selection &amp;amp; Rotosolve Optimisation" vertex="1">
+          <mxGeometry height="28" width="580" x="130" as="geometry" />
+        </mxCell>
+        <mxCell id="A2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Subsample Training Data&lt;br&gt;(N = 100)" vertex="1">
+          <mxGeometry height="48" width="175" x="260" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="A3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Pre-bind Base Circuit&lt;br&gt;to Training Samples" vertex="1">
+          <mxGeometry height="48" width="175" x="500" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="E1" edge="1" parent="1" source="A1" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="A2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" edge="1" parent="1" source="A2" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="A3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="B1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="For Each Gate&lt;br&gt;in Pool (60)" vertex="1">
+          <mxGeometry height="48" width="150" x="30" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="B2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Evaluate at&lt;br&gt;θ = 0, +π/2, −π/2" vertex="1">
+          <mxGeometry height="48" width="155" x="225" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="B3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Rotosolve Fit&lt;br&gt;Sinusoidal Parameters" vertex="1">
+          <mxGeometry height="48" width="165" x="425" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="B4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Grid Search θ*&lt;br&gt;Minimise C(θ)" vertex="1">
+          <mxGeometry height="48" width="145" x="635" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" edge="1" parent="1" source="A3" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="B1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="588" y="115" />
+              <mxPoint x="105" y="115" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="E4" edge="1" parent="1" source="B1" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="B2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E5" edge="1" parent="1" source="B2" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="B3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E6" edge="1" parent="1" source="B3" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="B4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="C1" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="All Candidates&lt;br&gt;Evaluated?" vertex="1">
+          <mxGeometry height="55" width="130" x="643" y="225" as="geometry" />
+        </mxCell>
+        <mxCell id="E7" edge="1" parent="1" source="B4" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="C1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E8" edge="1" parent="1" source="C1" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="B1" value="No">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="830" y="253" />
+              <mxPoint x="830" y="125" />
+              <mxPoint x="105" y="125" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontSize=8;fontColor=#b85450;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;i&gt;Inner Gate Evaluation Loop&lt;/i&gt;" vertex="1">
+          <mxGeometry height="18" width="155" x="20" y="198" as="geometry" />
+        </mxCell>
+        <mxCell id="D1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;b&gt;Select Gate with Lowest C(θ*)&lt;/b&gt;&lt;br&gt;→ gate*, θ*, feature*" vertex="1">
+          <mxGeometry height="45" width="200" x="290" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="E9" edge="1" parent="1" source="C1" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="D1" value="Yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="D2" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Cost Improved&lt;br&gt;vs Best So Far?" vertex="1">
+          <mxGeometry height="58" width="135" x="325" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="E10" edge="1" parent="1" source="D1" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="D2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="F1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Append Gate to Circuit&lt;br&gt;Reset Patience = 0" vertex="1">
+          <mxGeometry height="42" width="175" x="60" y="465" as="geometry" />
+        </mxCell>
+        <mxCell id="E11" edge="1" parent="1" source="D2" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="F1" value="Yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="F2" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Max Gates&lt;br&gt;Reached?" vertex="1">
+          <mxGeometry height="55" width="120" x="90" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="E12" edge="1" parent="1" source="F1" style="rounded=1;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="F2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="F3" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Patience ++&lt;br&gt;≥ Threshold?" vertex="1">
+          <mxGeometry height="55" width="140" x="555" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="E13" edge="1" parent="1" source="D2" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="F3" value="No">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="G1" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="END&lt;br&gt;&lt;b&gt;Return Best Circuit&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="170" x="300" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="E14" edge="1" parent="1" source="F2" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="G1" value="Yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E15" edge="1" parent="1" source="F2" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="A2" value="No (Next Iteration)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="15" y="568" />
+              <mxPoint x="15" y="74" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="E16" edge="1" parent="1" source="F3" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="G1" value="Yes (Stop)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="E17" edge="1" parent="1" source="F3" style="rounded=1;fontStyle=2;fontSize=9;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" target="A2" value="No (Next Iteration)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="488" />
+              <mxPoint x="860" y="38" />
+              <mxPoint x="348" y="38" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="N2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=8;fontColor=#666666;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;i&gt;Outer: Add Next Gate&lt;/i&gt;" vertex="1">
+          <mxGeometry height="18" width="120" x="17" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="A1" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=10;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="START&lt;br&gt;&lt;i style=&quot;font-size:9px&quot;&gt;Empty Circuit + Bias&lt;/i&gt;" vertex="1">
+          <mxGeometry height="48" width="170" x="30" y="50" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
