@@ -1,0 +1,26 @@
+
+================================================================================
+QNN COMPARISON REPORT
+Adaptive QNN (ARC) vs Fixed Ansatz QNN
+================================================================================
+
+Dataset: 1000 train, 200 test, 5 features, 5 qubits
+
+--------------------------------------------------------------------------------
+Metric                    | ARC_QNN              | Fixed_QNN_COBYLA    
+--------------------------------------------------------------------------------
+Test Accuracy             | 0.7800               | 0.5550              
+Test Balanced Acc         | 0.7985               | 0.5000              
+Test F1 Score             | 0.7766               | 0.3962              
+Test Log-Loss             | 0.5030               | 1.1690              
+Train Accuracy            | 0.8080               | 0.5140              
+Circuit Depth             | 9                    | 23                  
+Num Parameters            | 15                   | 30                  
+Num Gates                 | 15                   | 23                  
+Training Time (s)         | 60.5633              | 34.7484             
+Total Measurements        | 127290               | 21200               
+--------------------------------------------------------------------------------
+
+Conclusion:
+  Best test accuracy: ARC_QNN (0.7800)
+  ARC vs Fixed_QNN_COBYLA: +0.2250 accuracy difference
